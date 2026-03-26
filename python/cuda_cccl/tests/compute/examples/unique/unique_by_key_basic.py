@@ -26,16 +26,21 @@ d_out_keys = cp.empty_like(d_in_keys)
 d_out_values = cp.empty_like(d_in_values)
 d_out_num_selected = cp.empty(1, np.int32)
 
-# Perform the unique by key operation.
-cuda.compute.unique_by_key(
+uniquer = cuda.compute.make_unique_by_key(
     d_in_keys,
     d_in_values,
     d_out_keys,
     d_out_values,
     d_out_num_selected,
     OpKind.EQUAL_TO,
-    d_in_keys.size,
 )
+temp_storage_bytes = int(
+    uniquer(None, d_in_keys, d_in_values, d_out_keys, d_out_values, d_out_num_selected, OpKind.EQUAL_TO, d_in_keys.size, None)
+)
+d_temp_storage = cp.empty(
+    temp_storage_bytes if temp_storage_bytes > 0 else 0, dtype=np.uint8
+)
+uniquer(d_temp_storage, d_in_keys, d_in_values, d_out_keys, d_out_values, d_out_num_selected, OpKind.EQUAL_TO, d_in_keys.size, None)
 
 # Verify the result.
 num_selected = cp.asnumpy(d_out_num_selected)[0]

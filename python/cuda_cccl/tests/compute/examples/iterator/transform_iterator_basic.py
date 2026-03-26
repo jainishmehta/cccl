@@ -11,10 +11,10 @@ sum of squares of a sequence of numbers.
 import cupy as cp
 import numpy as np
 
+import cuda.compute
 from cuda.compute import (
     OpKind,
     TransformIterator,
-    reduce_into,
 )
 
 # Prepare the input and output arrays.
@@ -25,8 +25,14 @@ h_init = np.array([0], dtype=np.int32)  # Initial value for the reduction
 # Create a TransformIterator to (lazily) apply the square
 it_input = TransformIterator(d_input, lambda a: a**2)
 
-# Use `reduce_into` to compute the sum of the squares of the input.
-reduce_into(it_input, d_output, OpKind.PLUS, len(d_input), h_init)
+reducer = cuda.compute.make_reduce_into(it_input, d_output, OpKind.PLUS, h_init)
+temp_storage_bytes = int(
+    reducer(None, it_input, d_output, OpKind.PLUS, len(d_input), h_init, None)
+)
+d_temp_storage = cp.empty(
+    temp_storage_bytes if temp_storage_bytes > 0 else 0, dtype=np.uint8
+)
+reducer(d_temp_storage, it_input, d_output, OpKind.PLUS, len(d_input), h_init, None)
 
 # Verify the result.
 expected_output = cp.sum(d_input**2).get()

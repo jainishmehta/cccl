@@ -30,15 +30,22 @@ def sqrt(x: np.float32) -> np.float32:
 
 # Create transform output iterator
 d_out_it = TransformOutputIterator(d_output, sqrt)
+h_init = np.asarray([0], dtype=np.float32)
 
 
 # Apply a sum reduction into the transform output iterator
-cuda.compute.reduce_into(
+reducer = cuda.compute.make_reduce_into(
     d_input,
     d_out_it,
     OpKind.PLUS,
-    len(d_input),
     np.asarray([0], dtype=np.float32),
 )
+temp_storage_bytes = int(
+    reducer(None, d_input, d_out_it, OpKind.PLUS, len(d_input), h_init, None)
+)
+d_temp_storage = cp.empty(
+    temp_storage_bytes if temp_storage_bytes > 0 else 0, dtype=np.uint8
+)
+reducer(d_temp_storage, d_input, d_out_it, OpKind.PLUS, len(d_input), h_init, None)
 
 assert cp.allclose(d_output, cp.sqrt(cp.sum(d_input)), atol=1e-6)

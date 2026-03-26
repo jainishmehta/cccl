@@ -10,6 +10,107 @@ from cuda.compute import OpKind
 pytestmark = pytest.mark.no_numba
 
 
+def _reduce_into_run(d_in, d_out, op, num_items, h_init, stream=None):
+    reducer = cuda.compute.make_reduce_into(d_in, d_out, op, h_init)
+    get_bytes = getattr(reducer, "get_temp_storage_bytes", None)
+    compute = getattr(reducer, "compute", None)
+    if get_bytes is not None and compute is not None:
+        temp_storage_bytes = int(
+            get_bytes(d_in, d_out, num_items, h_init=h_init, stream=stream)
+        )
+        d_temp = cp.empty(temp_storage_bytes if temp_storage_bytes > 0 else 0, dtype=np.uint8)
+        compute(d_temp, d_in, d_out, num_items, h_init=h_init, stream=stream)
+        return
+    nbytes = int(reducer(None, d_in, d_out, op, num_items, h_init, stream))
+    d_temp = cp.empty(nbytes if nbytes > 0 else 0, dtype=np.uint8)
+    reducer(d_temp, d_in, d_out, op, num_items, h_init, stream)
+
+
+def _segmented_sort_run(
+    d_keys_in,
+    d_keys_out,
+    d_items_in,
+    d_items_out,
+    num_items,
+    num_segments,
+    d_begin_offsets,
+    d_end_offsets,
+    sort_order,
+    stream=None,
+):
+    sorter = cuda.compute.make_segmented_sort(
+        d_keys_in,
+        d_keys_out,
+        d_items_in,
+        d_items_out,
+        d_begin_offsets,
+        d_end_offsets,
+        num_segments,
+        sort_order,
+    )
+    get_bytes = getattr(sorter, "get_temp_storage_bytes", None)
+    compute = getattr(sorter, "compute", None)
+    if get_bytes is not None and compute is not None:
+        nbytes = int(
+            get_bytes(
+                d_keys_in,
+                d_keys_out,
+                d_items_in,
+                d_items_out,
+                d_begin_offsets,
+                d_end_offsets,
+                num_segments,
+                num_items,
+                sort_order=sort_order,
+                stream=stream,
+            )
+        )
+        d_temp = cp.empty(nbytes if nbytes > 0 else 0, dtype=np.uint8)
+        compute(
+            d_temp,
+            d_keys_in,
+            d_keys_out,
+            d_items_in,
+            d_items_out,
+            d_begin_offsets,
+            d_end_offsets,
+            num_segments,
+            num_items,
+            sort_order=sort_order,
+            stream=stream,
+        )
+        return
+    nbytes = int(
+        sorter(
+            None,
+            d_keys_in,
+            d_keys_out,
+            d_items_in,
+            d_items_out,
+            d_begin_offsets,
+            d_end_offsets,
+            num_segments,
+            num_items,
+            sort_order,
+            stream,
+        )
+    )
+    d_temp = cp.empty(nbytes if nbytes > 0 else 0, dtype=np.uint8)
+    sorter(
+        d_temp,
+        d_keys_in,
+        d_keys_out,
+        d_items_in,
+        d_items_out,
+        d_begin_offsets,
+        d_end_offsets,
+        num_segments,
+        num_items,
+        sort_order,
+        stream,
+    )
+
+
 @pytest.mark.no_numba
 def test_import_numba_raises():
     with pytest.raises(
@@ -25,7 +126,7 @@ def test_reduce_op_kind():
     d_output = cp.empty(1, dtype=np.int32)
 
     h_init = np.array(0, dtype=np.int32)
-    cuda.compute.reduce_into(d_input, d_output, OpKind.PLUS, num_items, h_init)
+    _reduce_into_run(d_input, d_output, OpKind.PLUS, num_items, h_init)
 
     result = d_output.get()[0]
     expected = np.sum(h_input)
@@ -59,7 +160,7 @@ def test_segmented_sort_op_kind():
 
     num_segments = len(h_offsets) - 1
 
-    cuda.compute.segmented_sort(
+    _segmented_sort_run(
         d_keys_in,
         d_keys_out,
         None,

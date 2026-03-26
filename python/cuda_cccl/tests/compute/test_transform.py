@@ -13,12 +13,19 @@ from cuda.compute import (
     gpu_struct,
 )
 
-
 def unary_transform_host(h_input: np.ndarray, op):
     return np.vectorize(op)(h_input)
 
 
-def unary_transform_device(d_input, d_output, num_items, op, stream=None):
+def unary_transform_device(d_input, d_output, op, num_items, stream=None):
+    transformer = cuda.compute.make_unary_transform(d_input, d_output, op)
+    get_bytes = getattr(transformer, "get_temp_storage_bytes", None)
+    compute = getattr(transformer, "compute", None)
+    if get_bytes is not None and compute is not None:
+        nbytes = int(get_bytes(d_input, d_output, op, num_items, stream=stream))
+        d_temp = cp.empty(nbytes if nbytes > 0 else 0, dtype=np.uint8)
+        compute(d_temp, d_input, d_output, op, num_items, stream=stream)
+        return
     cuda.compute.unary_transform(d_input, d_output, op, num_items, stream=stream)
 
 
@@ -26,10 +33,16 @@ def binary_transform_host(h_input1: np.ndarray, h_input2: np.ndarray, op):
     return np.vectorize(op)(h_input1, h_input2)
 
 
-def binary_transform_device(d_input1, d_input2, d_output, num_items, op, stream=None):
-    cuda.compute.binary_transform(
-        d_input1, d_input2, d_output, op, num_items, stream=stream
-    )
+def binary_transform_device(d_input1, d_input2, d_output, op, num_items, stream=None):
+    transformer = cuda.compute.make_binary_transform(d_input1, d_input2, d_output, op)
+    get_bytes = getattr(transformer, "get_temp_storage_bytes", None)
+    compute = getattr(transformer, "compute", None)
+    if get_bytes is not None and compute is not None:
+        nbytes = int(get_bytes(d_input1, d_input2, d_output, op, num_items, stream=stream))
+        d_temp = cp.empty(nbytes if nbytes > 0 else 0, dtype=np.uint8)
+        compute(d_temp, d_input1, d_input2, d_output, op, num_items, stream=stream)
+        return
+    cuda.compute.binary_transform(d_input1, d_input2, d_output, op, num_items, stream=stream)
 
 
 def test_unary_transform(input_array):
@@ -42,7 +55,7 @@ def test_unary_transform(input_array):
     d_in = input_array
     d_out = cp.empty_like(d_in)
 
-    unary_transform_device(d_in, d_out, len(d_in), op)
+    unary_transform_device(d_in, d_out, op, len(d_in))
 
     got = d_out.get()
     expected = unary_transform_host(d_in.get(), op)
@@ -61,7 +74,7 @@ def test_binary_transform(input_array):
     d_in2 = input_array
     d_out = cp.empty_like(d_in1)
 
-    binary_transform_device(d_in1, d_in2, d_out, len(d_in1), op)
+    binary_transform_device(d_in1, d_in2, d_out, op, len(d_in1))
 
     got = d_out.get()
     expected = binary_transform_host(d_in1.get(), d_in2.get(), op)
@@ -96,7 +109,7 @@ def test_unary_transform_struct_type():
 
     d_out = cp.empty_like(d_in)
 
-    cuda.compute.unary_transform(d_in, d_out, op, len(d_in))
+    unary_transform_device(d_in, d_out, op, len(d_in))
 
     got = d_out.get()
 
@@ -143,7 +156,7 @@ def test_binary_transform_struct_type():
 
     d_out = cp.empty_like(d_in1)
 
-    cuda.compute.binary_transform(d_in1, d_in2, d_out, op, len(d_in1))
+    binary_transform_device(d_in1, d_in2, d_out, op, len(d_in1))
 
     got = d_out.get()
 
@@ -160,7 +173,7 @@ def test_unary_transform_iterator_input():
     num_items = 1024
     d_out = cp.empty(num_items, dtype=np.int32)
 
-    unary_transform_device(d_in, d_out, num_items, op)
+    unary_transform_device(d_in, d_out, op, num_items)
 
     got = d_out.get()
     expected = np.arange(1, num_items + 1, dtype=np.int32)
@@ -178,7 +191,7 @@ def test_binary_transform_iterator_input():
     num_items = 1024
     d_out = cp.empty(num_items, dtype=np.int32)
 
-    binary_transform_device(d_in1, d_in2, d_out, num_items, op)
+    binary_transform_device(d_in1, d_in2, d_out, op, num_items)
 
     got = d_out.get()
     expected = np.arange(1, 2 * num_items + 1, step=2, dtype=np.int32)
@@ -198,7 +211,7 @@ def test_unary_transform_with_stream(cuda_stream):
         d_in = cp.arange(n, dtype=np.int32)
         d_out = cp.empty_like(d_in)
 
-    unary_transform_device(d_in, d_out, n, op, stream=cuda_stream)
+    unary_transform_device(d_in, d_out, op, n, stream=cuda_stream)
 
     got = d_out.get()
     expected = unary_transform_host(d_in.get(), op)
@@ -219,7 +232,7 @@ def test_binary_transform_with_stream(cuda_stream):
         d_in2 = cp.arange(n, dtype=np.int32)
         d_out = cp.empty_like(d_in1)
 
-    binary_transform_device(d_in1, d_in2, d_out, n, op, stream=cuda_stream)
+    binary_transform_device(d_in1, d_in2, d_out, op, n, stream=cuda_stream)
 
     got = d_out.get()
     expected = binary_transform_host(d_in1.get(), d_in2.get(), op)
@@ -237,7 +250,7 @@ def test_transform_reuse_input_iterator():
     num_items = 1024
     d_out = cp.empty(num_items, dtype=np.int32)
 
-    binary_transform_device(d_in1, d_in2, d_out, num_items, op)
+    binary_transform_device(d_in1, d_in2, d_out, op, num_items)
 
     got = d_out.get()
     expected = np.arange(1, 2 * num_items + 1, step=2, dtype=np.int32)
@@ -250,7 +263,7 @@ def test_transform_reuse_input_iterator():
     def op2(a):
         return a + 1
 
-    unary_transform_device(d_in2, d_out, num_items, op2)
+    unary_transform_device(d_in2, d_out, op2, num_items)
     got = d_out.get()
     expected = np.arange(1, num_items + 1, dtype=np.int32) + 1
 
@@ -264,7 +277,7 @@ def test_unary_transform_well_known_negate():
     d_output = cp.empty_like(d_input, dtype=dtype)
 
     # Run unary transform with well-known NEGATE operation
-    cuda.compute.unary_transform(d_input, d_output, OpKind.NEGATE, len(d_input))
+    unary_transform_device(d_input, d_output, OpKind.NEGATE, len(d_input))
 
     # Check the result is correct
     expected = np.array([-1, 2, -3, 4, -5])
@@ -278,7 +291,7 @@ def test_unary_transform_well_known_identity():
     d_output = cp.empty_like(d_input, dtype=dtype)
 
     # Run unary transform with well-known IDENTITY operation
-    cuda.compute.unary_transform(d_input, d_output, OpKind.IDENTITY, len(d_input))
+    unary_transform_device(d_input, d_output, OpKind.IDENTITY, len(d_input))
 
     # Check the result is correct
     expected = np.array([1, 2, 3, 4, 5])
@@ -293,9 +306,7 @@ def test_binary_transform_well_known_plus(dtype):
     d_output = cp.empty_like(d_input1, dtype=dtype)
 
     # Run binary transform with well-known PLUS operation
-    cuda.compute.binary_transform(
-        d_input1, d_input2, d_output, OpKind.PLUS, len(d_input1)
-    )
+    binary_transform_device(d_input1, d_input2, d_output, OpKind.PLUS, len(d_input1))
 
     # Check the result is correct
     expected = np.array([11, 22, 33, 44, 55])
@@ -310,7 +321,7 @@ def test_binary_transform_well_known_multiplies():
     d_output = cp.empty_like(d_input1, dtype=dtype)
 
     # Run binary transform with well-known MULTIPLIES operation
-    cuda.compute.binary_transform(
+    binary_transform_device(
         d_input1, d_input2, d_output, OpKind.MULTIPLIES, len(d_input1)
     )
 
@@ -339,7 +350,7 @@ def test_unary_transform_struct_type_with_annotations():
 
     d_out = cp.empty_like(d_in)
 
-    cuda.compute.unary_transform(d_in, d_out, scale_op, num_items)
+    unary_transform_device(d_in, d_out, scale_op, num_items)
 
     result = d_out.get()
 
@@ -374,7 +385,7 @@ def test_binary_transform_struct_type_with_annotations():
 
     d_out = cp.empty_like(d_in1)
 
-    cuda.compute.binary_transform(d_in1, d_in2, d_out, add_vectors, num_items)
+    binary_transform_device(d_in1, d_in2, d_out, add_vectors, num_items)
 
     result = d_out.get()
 
@@ -397,7 +408,7 @@ def test_unary_transform_stateful_counting():
             numba_cuda.atomic.add(even_count, 0, 1)
         return x * 2
 
-    cuda.compute.unary_transform(d_in, d_out, count_evens, len(d_in))
+    unary_transform_device(d_in, d_out, count_evens, len(d_in))
 
     expected_output = cp.arange(100, dtype=np.int32) * 2
     np.testing.assert_array_equal(d_out.get(), expected_output.get())
@@ -420,7 +431,7 @@ def test_unary_transform_stateful_state_updates():
     def add_threshold_10(x):
         return x + threshold_10[0]
 
-    cuda.compute.unary_transform(d_in, d_out, add_threshold_10, num_items)
+    unary_transform_device(d_in, d_out, add_threshold_10, num_items)
     result_1 = d_out.get()
     expected_1 = d_in.get() + 10
     np.testing.assert_array_equal(result_1, expected_1)
@@ -430,14 +441,14 @@ def test_unary_transform_stateful_state_updates():
         return x + threshold_15[0]
 
     d_out.fill(0)
-    cuda.compute.unary_transform(d_in, d_out, add_threshold_15, num_items)
+    unary_transform_device(d_in, d_out, add_threshold_15, num_items)
     result_2 = d_out.get()
     expected_2 = d_in.get() + 15
     np.testing.assert_array_equal(result_2, expected_2)
 
     # Call 3: Back to first threshold (test cache reuse with updated state)
     d_out.fill(0)
-    cuda.compute.unary_transform(d_in, d_out, add_threshold_10, num_items)
+    unary_transform_device(d_in, d_out, add_threshold_10, num_items)
     result_3 = d_out.get()
     expected_3 = d_in.get() + 10
     np.testing.assert_array_equal(result_3, expected_3)
@@ -456,7 +467,7 @@ def test_unary_transform_stateful_multiple_arrays():
     def transform_with_multiple_state(x):
         return (x + offset[0]) * multiplier[0]
 
-    cuda.compute.unary_transform(d_in, d_out, transform_with_multiple_state, num_items)
+    unary_transform_device(d_in, d_out, transform_with_multiple_state, num_items)
     result = d_out.get()
     expected = (d_in.get() + 5) * 2
     np.testing.assert_array_equal(result, expected)
@@ -469,7 +480,7 @@ def test_unary_transform_stateful_multiple_arrays():
         return (x + offset[0]) * multiplier[0]
 
     d_out.fill(0)
-    cuda.compute.unary_transform(d_in, d_out, transform_with_updated_state, num_items)
+    unary_transform_device(d_in, d_out, transform_with_updated_state, num_items)
     result = d_out.get()
     expected = (d_in.get() + 10) * 3
     np.testing.assert_array_equal(result, expected)
@@ -494,15 +505,13 @@ def test_unary_transform_stateful_closure_factory():
     d_out = cp.empty_like(d_in)
 
     # First call with offset 10
-    cuda.compute.unary_transform(d_in, d_out, make_adder(cp.array([10])), len(d_in))
+    unary_transform_device(d_in, d_out, make_adder(cp.array([10])), len(d_in))
     np.testing.assert_array_equal(d_out.get(), np.array([10, 11, 12]))
 
     # Multiple calls with different offsets to test state re-detection
     for i in range(5):
         offset = i * 10
-        cuda.compute.unary_transform(
-            d_in, d_out, make_adder(cp.array([offset])), len(d_in)
-        )
+        unary_transform_device(d_in, d_out, make_adder(cp.array([offset])), len(d_in))
         expected = np.array([offset, offset + 1, offset + 2])
         np.testing.assert_array_equal(
             d_out.get(),
@@ -517,7 +526,7 @@ def test_unary_transform_with_lambda():
     d_out = cp.empty_like(d_in)
 
     # Use a lambda function directly
-    cuda.compute.unary_transform(d_in, d_out, lambda x: x * 2, len(d_in))
+    unary_transform_device(d_in, d_out, lambda x: x * 2, len(d_in))
 
     expected = np.array([2, 4, 6, 8, 10], dtype=np.int32)
     np.testing.assert_array_equal(d_out.get(), expected)
@@ -530,7 +539,7 @@ def test_binary_transform_with_lambda():
     d_out = cp.empty_like(d_in1)
 
     # Use a lambda function directly
-    cuda.compute.binary_transform(d_in1, d_in2, d_out, lambda a, b: a + b, len(d_in1))
+    binary_transform_device(d_in1, d_in2, d_out, lambda a, b: a + b, len(d_in1))
 
     expected = np.array([11, 22, 33, 44, 55], dtype=np.int32)
     np.testing.assert_array_equal(d_out.get(), expected)
@@ -541,9 +550,7 @@ def test_binary_transform_bool_equal_to():
     d_input2 = cp.array([True, True, False, False], dtype=np.bool_)
     d_output = cp.empty_like(d_input1)
 
-    cuda.compute.binary_transform(
-        d_input1, d_input2, d_output, OpKind.EQUAL_TO, len(d_input1)
-    )
+    binary_transform_device(d_input1, d_input2, d_output, OpKind.EQUAL_TO, len(d_input1))
 
     expected = np.array([True, False, False, True], dtype=np.bool_)
     np.testing.assert_array_equal(d_output.get(), expected)
@@ -566,10 +573,10 @@ def test_stateful_transform_same_bytecode_different_sizes():
     op1 = make_op(cp.empty(1))  # len(arr) == 1
     op2 = make_op(cp.empty(2))  # len(arr) == 2
 
-    cuda.compute.unary_transform(d_in, d_out, op1, len(d_in))
+    unary_transform_device(d_in, d_out, op1, len(d_in))
     np.testing.assert_array_equal(np.asarray([False, True, True]), d_out.get())
 
-    cuda.compute.unary_transform(d_in, d_out, op2, len(d_in))
+    unary_transform_device(d_in, d_out, op2, len(d_in))
     np.testing.assert_array_equal(np.asarray([False, False, True]), d_out.get())
 
 
@@ -592,7 +599,7 @@ def test_transform_caching_with_global_np_ufunc():
 
     d_out = cp.empty_like(d_in)
 
-    cuda.compute.unary_transform(d_in, d_out, make_op(), len(d_in))
+    unary_transform_device(d_in, d_out, make_op(), len(d_in))
     cp.testing.assert_allclose(d_out, cp.sin(d_in))
 
     def make_op():
@@ -603,7 +610,7 @@ def test_transform_caching_with_global_np_ufunc():
 
         return op
 
-    cuda.compute.unary_transform(d_in, d_out, make_op(), len(d_in))
+    unary_transform_device(d_in, d_out, make_op(), len(d_in))
     cp.testing.assert_allclose(d_out, cp.cos(d_in))
 
     d_in = cp.asarray([1.0, 2.0, 3.0])

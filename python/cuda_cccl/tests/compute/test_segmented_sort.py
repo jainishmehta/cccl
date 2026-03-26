@@ -43,6 +43,74 @@ DTYPE_SEGMENT_PARAMS = [
 ]
 
 
+def _segmented_sort_run(
+    d_keys_in,
+    d_keys_out,
+    d_values_in,
+    d_values_out,
+    num_items,
+    num_segments,
+    d_begin_offsets,
+    d_end_offsets,
+    sort_order,
+    stream=None,
+):
+    sorter = cuda.compute.make_segmented_sort(
+        d_keys_in,
+        d_keys_out,
+        d_values_in,
+        d_values_out,
+        d_begin_offsets,
+        d_end_offsets,
+        num_segments,
+        sort_order,
+    )
+    get_bytes = getattr(sorter, "get_temp_storage_bytes", None)
+    compute = getattr(sorter, "compute", None)
+    if get_bytes is not None and compute is not None:
+        nbytes = int(
+            get_bytes(
+                d_keys_in,
+                d_keys_out,
+                d_values_in,
+                d_values_out,
+                d_begin_offsets,
+                d_end_offsets,
+                num_segments,
+                num_items,
+                sort_order=sort_order,
+                stream=stream,
+            )
+        )
+        d_temp = cp.empty(nbytes if nbytes > 0 else 0, dtype=np.uint8)
+        compute(
+            d_temp,
+            d_keys_in,
+            d_keys_out,
+            d_values_in,
+            d_values_out,
+            d_begin_offsets,
+            d_end_offsets,
+            num_segments,
+            num_items,
+            sort_order=sort_order,
+            stream=stream,
+        )
+        return
+    cuda.compute.segmented_sort(
+        d_keys_in,
+        d_keys_out,
+        d_values_in,
+        d_values_out,
+        num_items,
+        num_segments,
+        d_begin_offsets,
+        d_end_offsets,
+        sort_order,
+        stream,
+    )
+
+
 def random_array(size, dtype, max_value=None) -> np.typing.NDArray:
     rng = np.random.default_rng()
     if np.isdtype(dtype, "integral"):
@@ -121,7 +189,7 @@ def test_segmented_sort_keys(dtype, num_segments, segment_size, monkeypatch):
     d_in_keys = numba.cuda.to_device(h_in_keys)
     d_out_keys = numba.cuda.to_device(np.empty_like(h_in_keys))
 
-    cuda.compute.segmented_sort(
+    _segmented_sort_run(
         d_in_keys,
         d_out_keys,
         None,
@@ -158,7 +226,7 @@ def test_segmented_sort_pairs(dtype, num_segments, segment_size):
     d_out_keys = numba.cuda.to_device(np.empty_like(h_in_keys))
     d_out_vals = numba.cuda.to_device(np.empty_like(h_in_vals))
 
-    cuda.compute.segmented_sort(
+    _segmented_sort_run(
         d_in_keys,
         d_out_keys,
         d_in_vals,
@@ -193,7 +261,7 @@ def test_segmented_sort_keys_double_buffer(dtype, num_segments, segment_size):
     d_tmp_keys = numba.cuda.to_device(np.empty_like(h_in_keys))
     keys_db = cuda.compute.DoubleBuffer(d_in_keys, d_tmp_keys)
 
-    cuda.compute.segmented_sort(
+    _segmented_sort_run(
         keys_db,
         None,
         None,
@@ -232,7 +300,7 @@ def test_segmented_sort_pairs_double_buffer(dtype, num_segments, segment_size):
     keys_db = cuda.compute.DoubleBuffer(d_in_keys, d_tmp_keys)
     vals_db = cuda.compute.DoubleBuffer(d_in_vals, d_tmp_vals)
 
-    cuda.compute.segmented_sort(
+    _segmented_sort_run(
         keys_db,
         None,
         vals_db,
@@ -302,7 +370,7 @@ def test_segmented_sort_variable_segment_sizes(num_segments):
     d_out_keys = numba.cuda.to_device(np.empty_like(h_in_keys))
     d_out_vals = numba.cuda.to_device(np.empty_like(h_in_vals))
 
-    cuda.compute.segmented_sort(
+    _segmented_sort_run(
         d_in_keys,
         d_out_keys,
         d_in_vals,

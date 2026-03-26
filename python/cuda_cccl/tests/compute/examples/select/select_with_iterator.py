@@ -6,7 +6,7 @@
 # example-begin
 import cupy as cp
 
-from cuda.compute.algorithms import select
+from cuda.compute.algorithms import make_select
 from cuda.compute.iterators import TransformIterator
 
 # Create input data
@@ -28,7 +28,14 @@ def greater_than_20(x):
     return x > 20
 
 
-select(squared_iter, d_out, d_num_selected, greater_than_20, len(d_in))
+selector = make_select(squared_iter, d_out, d_num_selected, greater_than_20)
+temp_storage_bytes = int(
+    selector(None, squared_iter, d_out, d_num_selected, greater_than_20, len(d_in), None)
+)
+d_temp_storage = cp.empty(
+    temp_storage_bytes if temp_storage_bytes > 0 else 0, dtype=cp.uint8
+)
+selector(d_temp_storage, squared_iter, d_out, d_num_selected, greater_than_20, len(d_in), None)
 
 # Get results
 num_selected = int(d_num_selected[0])

@@ -33,7 +33,28 @@ def sum_paired_values(pair):
 
 
 # Perform the unary transform.
-cuda.compute.unary_transform(zip_it, d_output, sum_paired_values, num_items)
+transformer = cuda.compute.make_unary_transform(zip_it, d_output, sum_paired_values)
+get_bytes = getattr(transformer, "get_temp_storage_bytes", None)
+compute = getattr(transformer, "compute", None)
+if get_bytes is not None and compute is not None:
+    temp_storage_bytes = int(
+        get_bytes(zip_it, d_output, sum_paired_values, num_items)
+    )
+    d_temp_storage = (
+        None
+        if temp_storage_bytes == 0
+        else cp.empty(temp_storage_bytes, dtype=np.uint8)
+    )
+    compute(
+        d_temp_storage,
+        zip_it,
+        d_output,
+        sum_paired_values,
+        num_items,
+    )
+else:
+    # Legacy object API: unary transform doesn't use explicit temp storage.
+    transformer(zip_it, d_output, sum_paired_values, num_items)
 
 # Calculate the expected results.
 expected = d_input1.get() + d_input2.get()

@@ -39,6 +39,15 @@ def disable_sass_check(monkeypatch):
     )
 
 
+def binary_search_object_api(factory, d_data, d_values, d_out, *, num_items, num_values, comp, stream=None):
+    searcher = factory(d_data, d_values, d_out, comp)
+    nbytes = int(
+        searcher(None, d_data, d_values, d_out, comp, num_items, num_values, stream)
+    )
+    d_temp = cp.empty(nbytes if nbytes > 0 else 0, dtype=np.uint8)
+    searcher(d_temp, d_data, d_values, d_out, comp, num_items, num_values, stream)
+
+
 @pytest.mark.parametrize("dtype", DTYPE_LIST)
 @pytest.mark.parametrize(
     "num_items,num_values", [(0, 0), (0, 128), (128, 0), (512, 128)]
@@ -51,7 +60,15 @@ def test_lower_bound_basic(dtype, num_items, num_values):
     d_values = cp.asarray(h_values)
     d_out = cp.empty(num_values, dtype=np.uintp)
 
-    cuda.compute.lower_bound(d_data, d_values, d_out, num_items, num_values)
+    binary_search_object_api(
+        cuda.compute.make_lower_bound,
+        d_data,
+        d_values,
+        d_out,
+        num_items=num_items,
+        num_values=num_values,
+        comp=None,
+    )
 
     expected = np.searchsorted(h_data, h_values, side="left").astype(np.uintp)
     got = cp.asnumpy(d_out)
@@ -70,7 +87,15 @@ def test_upper_bound_basic(dtype, num_items, num_values):
     d_values = cp.asarray(h_values)
     d_out = cp.empty(num_values, dtype=np.uintp)
 
-    cuda.compute.upper_bound(d_data, d_values, d_out, num_items, num_values)
+    binary_search_object_api(
+        cuda.compute.make_upper_bound,
+        d_data,
+        d_values,
+        d_out,
+        num_items=num_items,
+        num_values=num_values,
+        comp=None,
+    )
 
     expected = np.searchsorted(h_data, h_values, side="right").astype(np.uintp)
     got = cp.asnumpy(d_out)
@@ -95,35 +120,71 @@ def test_binary_search_with_duplicates(dtype):
     d_data = cp.asarray(h_data)
     d_values = cp.asarray(h_values)
     d_out = cp.empty(len(h_values), dtype=np.uintp)
+    n_items = len(h_data)
+    n_values = len(h_values)
 
-    cuda.compute.lower_bound(d_data, d_values, d_out, len(h_data), len(h_values))
+    binary_search_object_api(
+        cuda.compute.make_lower_bound,
+        d_data,
+        d_values,
+        d_out,
+        num_items=n_items,
+        num_values=n_values,
+        comp=None,
+    )
     expected = np.searchsorted(h_data, h_values, side="left").astype(np.uintp)
     got = cp.asnumpy(d_out)
     assert np.array_equal(got, expected)
 
-    cuda.compute.upper_bound(d_data, d_values, d_out, len(h_data), len(h_values))
+    binary_search_object_api(
+        cuda.compute.make_upper_bound,
+        d_data,
+        d_values,
+        d_out,
+        num_items=n_items,
+        num_values=n_values,
+        comp=None,
+    )
     expected = np.searchsorted(h_data, h_values, side="right").astype(np.uintp)
     got = cp.asnumpy(d_out)
     assert np.array_equal(got, expected)
 
 
-def test_binary_search_requires_unsigned_output():
+@pytest.mark.parametrize("factory", [cuda.compute.make_lower_bound, cuda.compute.make_upper_bound])
+def test_binary_search_requires_unsigned_output(factory):
     """Output must be unsigned integer dtype for indices."""
     d_data = cp.asarray(np.array([1, 2, 3, 4], dtype=np.int32))
     d_values = cp.asarray(np.array([2, 3], dtype=np.int32))
-    d_out = cp.empty(len(d_values), dtype=np.int32)  # signed, should fail
+    d_out = cp.empty(len(d_values), dtype=np.int32)
+    num_items, num_values = 4, 2
 
     with pytest.raises(TypeError, match="unsigned integer"):
-        cuda.compute.lower_bound(d_data, d_values, d_out, len(d_data), len(d_values))
+        binary_search_object_api(
+            factory,
+            d_data,
+            d_values,
+            d_out,
+            num_items=num_items,
+            num_values=num_values,
+            comp=None,
+        )
 
 
-def test_binary_search_requires_pointer_sized_output():
+@pytest.mark.parametrize("factory", [cuda.compute.make_lower_bound, cuda.compute.make_upper_bound])
+def test_binary_search_requires_pointer_sized_output(factory, bad_dtype):
     """Output must be pointer-sized (np.uintp) to hold any valid index."""
     d_data = cp.asarray(np.array([1, 2, 3, 4], dtype=np.int32))
     d_values = cp.asarray(np.array([2, 3], dtype=np.int32))
-    d_out = cp.empty(
-        len(d_values), dtype=np.uint32
-    )  # unsigned but not pointer-sized (on 64-bit)
+    d_out = cp.empty(len(d_values), dtype=bad_dtype)
+    num_items, num_values = 4, 2
 
     with pytest.raises(ValueError, match="pointer-sized"):
-        cuda.compute.lower_bound(d_data, d_values, d_out, len(d_data), len(d_values))
+        binary_search_object_api(
+            factory,
+            d_data,
+            d_values,
+            d_out,
+            num_items=num_items,
+            num_values=num_values,
+            comp=None,
+        )

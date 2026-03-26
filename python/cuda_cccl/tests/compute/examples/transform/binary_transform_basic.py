@@ -22,8 +22,34 @@ d_in1 = cp.asarray(input1_data)
 d_in2 = cp.asarray(input2_data)
 d_out = cp.empty_like(d_in1)
 
-# Perform the binary transform.
-cuda.compute.binary_transform(d_in1, d_in2, d_out, OpKind.PLUS, len(d_in1))
+transformer = cuda.compute.make_binary_transform(d_in1, d_in2, d_out, OpKind.PLUS)
+get_bytes = getattr(transformer, "get_temp_storage_bytes", None)
+compute = getattr(transformer, "compute", None)
+if get_bytes is not None and compute is not None:
+    temp_storage_bytes = int(
+        get_bytes(
+            d_in1,
+            d_in2,
+            d_out,
+            OpKind.PLUS,
+            len(d_in1),
+        )
+    )
+    d_temp_storage = (
+        None
+        if temp_storage_bytes == 0
+        else cp.empty(temp_storage_bytes, dtype=np.uint8)
+    )
+    compute(
+        d_temp_storage,
+        d_in1,
+        d_in2,
+        d_out,
+        OpKind.PLUS,
+        len(d_in1),
+    )
+else:
+    transformer(d_in1, d_in2, d_out, OpKind.PLUS, len(d_in1))
 
 # Verify the result.
 result = d_out.get()

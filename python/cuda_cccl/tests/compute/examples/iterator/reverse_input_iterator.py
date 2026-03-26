@@ -27,8 +27,15 @@ d_output = cp.empty(len(d_input), dtype=np.int32)
 # Prepare the initial value for the reduction.
 h_init = np.array(0, dtype=np.int32)
 
-# Perform the reduction.
-cuda.compute.inclusive_scan(reverse_it, d_output, OpKind.PLUS, h_init, len(d_input))
+# Perform the scan using the multi-step object API.
+scanner = cuda.compute.make_inclusive_scan(reverse_it, d_output, OpKind.PLUS, h_init)
+temp_storage_bytes = int(
+    scanner(None, reverse_it, d_output, OpKind.PLUS, len(d_input), h_init, None)
+)
+d_temp_storage = cp.empty(
+    temp_storage_bytes if temp_storage_bytes > 0 else 0, dtype=np.uint8
+)
+scanner(d_temp_storage, reverse_it, d_output, OpKind.PLUS, len(d_input), h_init, None)
 
 # Verify the result.
 expected_output = np.array([5, 9, 12, 14, 15], dtype=np.int32)

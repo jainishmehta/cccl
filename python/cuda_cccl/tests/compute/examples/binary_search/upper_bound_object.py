@@ -15,7 +15,28 @@ d_values = cp.asarray(h_values)
 d_out = cp.empty(len(h_values), dtype=np.uintp)
 
 searcher = cuda.compute.make_upper_bound(d_data, d_values, d_out)
-searcher(d_data, d_values, d_out, None, len(d_data), len(d_values))
+comp = None
+stream = None
+num_items = len(d_data)
+num_values = len(d_values)
+
+try:
+    nbytes = int(
+        searcher(None, d_data, d_values, d_out, comp, num_items, num_values, stream)
+    )
+    d_temp_storage = cp.empty(nbytes if nbytes > 0 else 0, dtype=np.uint8)
+    searcher(
+        d_temp_storage,
+        d_data,
+        d_values,
+        d_out,
+        comp,
+        num_items,
+        num_values,
+        stream,
+    )
+except TypeError:
+    searcher(d_data, d_values, d_out, comp, num_items, num_values, stream)
 
 expected = np.searchsorted(h_data, h_values, side="right").astype(np.uintp)
 got = cp.asnumpy(d_out)

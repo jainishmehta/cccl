@@ -8,6 +8,35 @@ import cuda.compute
 from cuda.compute import ZipIterator, gpu_struct
 
 
+def _reduce_into_run(d_in, d_out, op, num_items, h_init, stream=None):
+    reducer = cuda.compute.make_reduce_into(d_in, d_out, op, h_init)
+    get_bytes = getattr(reducer, "get_temp_storage_bytes", None)
+    compute = getattr(reducer, "compute", None)
+    if get_bytes is not None and compute is not None:
+        temp_storage_bytes = int(
+            get_bytes(d_in, d_out, num_items, h_init=h_init, stream=stream)
+        )
+        d_temp_storage = cp.empty(
+            temp_storage_bytes if temp_storage_bytes > 0 else 0, dtype=np.uint8
+        )
+        compute(d_temp_storage, d_in, d_out, num_items, h_init=h_init, stream=stream)
+        return
+
+    try:
+        tmp_storage_bytes = int(
+            reducer(None, d_in, d_out, op, num_items, h_init, stream)
+        )
+    except TypeError:
+        tmp_storage_bytes = int(reducer(None, d_in, d_out, op, num_items, h_init))
+    d_temp_storage = cp.empty(
+        tmp_storage_bytes if tmp_storage_bytes > 0 else 0, dtype=np.uint8
+    )
+    try:
+        reducer(d_temp_storage, d_in, d_out, op, num_items, h_init, stream)
+    except TypeError:
+        reducer(d_temp_storage, d_in, d_out, op, num_items, h_init)
+
+
 def test_reduce_nested_struct_direct():
     Inner = gpu_struct({"a": np.int32, "b": np.float32})
     Outer = gpu_struct({"x": np.int64, "inner": Inner})
@@ -35,7 +64,7 @@ def test_reduce_nested_struct_direct():
 
     h_init = Outer(0, Inner(0, 0.0))
 
-    cuda.compute.reduce_into(d_input, d_output, sum_nested, num_items, h_init)
+    _reduce_into_run(d_input, d_output, sum_nested, num_items, h_init)
 
     result = d_output.view(np.uint8).get().view(Outer.dtype)[0]
 
@@ -79,7 +108,7 @@ def test_nested_struct_inline():
 
     h_init = Outer(0, Inner(0, 0.0))
 
-    cuda.compute.reduce_into(d_input, d_output, sum_nested, num_items, h_init)
+    _reduce_into_run(d_input, d_output, sum_nested, num_items, h_init)
 
     result = d_output.view(np.uint8).get().view(Outer.dtype)[0]
 
@@ -126,7 +155,7 @@ def test_nested_struct_in_zip_iterator():
     d_output = cp.empty(1, dtype=Pixel.dtype)
     h_init = Pixel(Point(0, 0), Color(0, 0, 0))
 
-    cuda.compute.reduce_into(zip_it, d_output, sum_pixels, num_items, h_init)
+    _reduce_into_run(zip_it, d_output, sum_pixels, num_items, h_init)
 
     result = d_output.get()[0]
 
@@ -229,7 +258,7 @@ def test_dict_init_with_reduction():
     # Use dictionary initialization for the init value
     h_init = Outer({"x": 0, "inner": {"a": 0, "b": 0.0}})
 
-    cuda.compute.reduce_into(d_input, d_output, sum_nested, num_items, h_init)
+    _reduce_into_run(d_input, d_output, sum_nested, num_items, h_init)
 
     result = d_output.view(np.uint8).get().view(Outer.dtype)[0]
 
@@ -269,9 +298,7 @@ def test_nested_struct_tuple_construction():
 
     h_init = Outer(0, Inner(0, 0.0))
 
-    cuda.compute.reduce_into(
-        d_input, d_output, sum_nested_with_tuples, num_items, h_init
-    )
+    _reduce_into_run(d_input, d_output, sum_nested_with_tuples, num_items, h_init)
 
     result = d_output.view(np.uint8).get().view(Outer.dtype)[0]
 
@@ -318,7 +345,7 @@ def test_deeply_nested_tuple_construction():
 
     h_init = Level3(0, Level2(0.0, Level1(0)))
 
-    cuda.compute.reduce_into(d_input, d_output, sum_deeply_nested, num_items, h_init)
+    _reduce_into_run(d_input, d_output, sum_deeply_nested, num_items, h_init)
 
     result = d_output.view(np.uint8).get().view(Level3.dtype)[0]
 
@@ -365,7 +392,7 @@ def test_mixed_tuple_and_direct_construction():
 
     h_init = Outer(0, Inner1(0, 0), Inner2(0.0, 0.0))
 
-    cuda.compute.reduce_into(d_input, d_output, sum_mixed, num_items, h_init)
+    _reduce_into_run(d_input, d_output, sum_mixed, num_items, h_init)
 
     result = d_output.view(np.uint8).get().view(Outer.dtype)[0]
 
@@ -418,9 +445,7 @@ def test_tuple_construction_in_zip_iterator():
     d_output = cp.empty(1, dtype=Pixel.dtype)
     h_init = Pixel(Point(0, 0), Color(0, 0, 0))
 
-    cuda.compute.reduce_into(
-        zip_it, d_output, sum_pixels_with_tuples, num_items, h_init
-    )
+    _reduce_into_run(zip_it, d_output, sum_pixels_with_tuples, num_items, h_init)
 
     result = d_output.get()[0]
 
@@ -464,7 +489,7 @@ def test_all_tuple_construction():
 
     h_init = Outer(Inner1(0), Inner2(0.0))
 
-    cuda.compute.reduce_into(d_input, d_output, sum_all_tuples, num_items, h_init)
+    _reduce_into_run(d_input, d_output, sum_all_tuples, num_items, h_init)
 
     result = d_output.view(np.uint8).get().view(Outer.dtype)[0]
 

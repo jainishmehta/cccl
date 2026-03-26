@@ -24,7 +24,6 @@ d_input_values = cp.asarray(h_input_values)
 d_output_keys = cp.empty_like(d_input_keys)
 d_output_values = cp.empty_like(d_input_values)
 
-# Create the merge sort object.
 sorter = cuda.compute.make_merge_sort(
     d_input_keys,
     d_input_values,
@@ -33,21 +32,14 @@ sorter = cuda.compute.make_merge_sort(
     OpKind.LESS,
 )
 
-# Get the temporary storage size.
-temp_storage_size = sorter(
-    None,
-    d_input_keys,
-    d_input_values,
-    d_output_keys,
-    d_output_values,
-    OpKind.LESS,
-    len(h_input_keys),
+temp_storage_size = int(
+    sorter(None, d_input_keys, d_input_values, d_output_keys, d_output_values, OpKind.LESS, len(h_input_keys), None)
 )
 
-# Allocate the temporary storage.
-d_temp_storage = cp.empty(temp_storage_size, dtype=np.uint8)
+d_temp_storage = cp.empty(
+    temp_storage_size if temp_storage_size > 0 else 0, dtype=np.uint8
+)
 
-# Perform the merge sort.
 sorter(
     d_temp_storage,
     d_input_keys,
@@ -56,6 +48,7 @@ sorter(
     d_output_values,
     OpKind.LESS,
     len(h_input_keys),
+    None,
 )
 
 # Verify the result.

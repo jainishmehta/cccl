@@ -43,6 +43,76 @@ three_way_partition_params = [
 ]
 
 
+def _three_way_partition_run(
+    d_in,
+    d_first,
+    d_second,
+    d_unselected,
+    d_num_selected,
+    select_first,
+    select_second,
+    num_items,
+    stream=None,
+):
+    partitioner = cuda.compute.make_three_way_partition(
+        d_in, d_first, d_second, d_unselected, d_num_selected, select_first, select_second
+    )
+    get_bytes = getattr(partitioner, "get_temp_storage_bytes", None)
+    compute = getattr(partitioner, "compute", None)
+    if get_bytes is not None and compute is not None:
+        nbytes = int(
+            get_bytes(
+                d_in,
+                d_first,
+                d_second,
+                d_unselected,
+                d_num_selected,
+                num_items,
+                stream=stream,
+            )
+        )
+        d_temp = cp.empty(nbytes if nbytes > 0 else 0, dtype=np.uint8)
+        compute(
+            d_temp,
+            d_in,
+            d_first,
+            d_second,
+            d_unselected,
+            d_num_selected,
+            num_items,
+            stream=stream,
+        )
+        return
+
+    nbytes = int(
+        partitioner(
+            None,
+            d_in,
+            d_first,
+            d_second,
+            d_unselected,
+            d_num_selected,
+            select_first,
+            select_second,
+            num_items,
+            stream,
+        )
+    )
+    d_temp = cp.empty(nbytes if nbytes > 0 else 0, dtype=np.uint8)
+    partitioner(
+        d_temp,
+        d_in,
+        d_first,
+        d_second,
+        d_unselected,
+        d_num_selected,
+        select_first,
+        select_second,
+        num_items,
+        stream,
+    )
+
+
 def _host_three_way_partition(h_in: np.ndarray, less_than_op, greater_equal_op):
     # Vectorize ops to produce boolean masks
     first_mask = np.vectorize(less_than_op, otypes=[np.uint8])(h_in).astype(bool)
@@ -90,7 +160,7 @@ def test_three_way_partition_basic(dtype, num_items, monkeypatch):
     d_second = cp.empty_like(d_in)
     d_unselected = cp.empty_like(d_in)
     d_num_selected = cp.empty(2, dtype=np.int32)
-    cuda.compute.three_way_partition(
+    _three_way_partition_run(
         d_in,
         d_first,
         d_second,
@@ -132,7 +202,7 @@ def test_three_way_partition_empty():
     def greater_equal_op(x):
         return x >= 42
 
-    cuda.compute.three_way_partition(
+    _three_way_partition_run(
         d_in,
         d_first,
         d_second,
@@ -169,7 +239,7 @@ def test_three_way_partition_with_iterators():
     d_unselected = cp.empty_like(d_in)
     d_num_selected = cp.empty(2, dtype=np.uint32)
 
-    cuda.compute.three_way_partition(
+    _three_way_partition_run(
         in_it,
         d_first,
         d_second,
@@ -231,7 +301,7 @@ def test_three_way_partition_struct_type():
     d_unselected = cp.empty_like(d_in)
     d_num_selected = cp.empty(2, dtype=np.uint64)
 
-    cuda.compute.three_way_partition(
+    _three_way_partition_run(
         d_in,
         d_first,
         d_second,
@@ -277,7 +347,7 @@ def test_three_way_partition_with_stream(cuda_stream):
         d_unselected = cp.empty_like(d_in)
         d_num_selected = cp.empty(2, dtype=np.int64)
 
-    cuda.compute.three_way_partition(
+    _three_way_partition_run(
         d_in,
         d_first,
         d_second,
@@ -319,7 +389,7 @@ def test_three_way_partition_no_selection():
     d_unselected = cp.empty_like(d_in)
     d_num_selected = cp.empty(2, dtype=np.int64)
 
-    cuda.compute.three_way_partition(
+    _three_way_partition_run(
         d_in,
         d_first,
         d_second,
@@ -356,7 +426,7 @@ def test_three_way_partition_same_predicate():
     d_unselected = cp.empty_like(d_in)
     d_num_selected = cp.empty(2, dtype=np.int64)
 
-    cuda.compute.three_way_partition(
+    _three_way_partition_run(
         d_in,
         d_first,
         d_second,
@@ -389,7 +459,7 @@ def test_three_way_partition_all_selected_first():
     d_unselected = cp.empty_like(d_in)
     d_num_selected = cp.empty(2, dtype=np.int64)
 
-    cuda.compute.three_way_partition(
+    _three_way_partition_run(
         d_in,
         d_first,
         d_second,

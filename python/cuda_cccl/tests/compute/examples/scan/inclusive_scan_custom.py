@@ -24,8 +24,14 @@ def add_op(a, b):
     return (a if a % 2 == 0 else 0) + (b if b % 2 == 0 else 0)
 
 
-# Perform the inclusive scan.
-cuda.compute.inclusive_scan(d_input, d_output, add_op, h_init, d_input.size)
+scanner = cuda.compute.make_inclusive_scan(d_input, d_output, add_op, h_init)
+temp_storage_bytes = int(
+    scanner(None, d_input, d_output, add_op, d_input.size, h_init, None)
+)
+d_temp_storage = cp.empty(
+    temp_storage_bytes if temp_storage_bytes > 0 else 0, dtype=np.uint8
+)
+scanner(d_temp_storage, d_input, d_output, add_op, d_input.size, h_init, None)
 
 # Verify the result.
 expected = np.asarray([0, 2, 2, 6, 6])

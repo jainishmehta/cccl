@@ -65,7 +65,14 @@ d_inp = ZipIterator(u, negative_exponents_it)
 d_cumsum = cp.empty(u.shape, dtype=ValueScale.dtype)
 h_init = ValueScale(0.0, 0)
 
-cuda.compute.inclusive_scan(d_inp, d_cumsum, add_op, h_init, u.size)
+scanner = cuda.compute.make_inclusive_scan(d_inp, d_cumsum, add_op, h_init)
+temp_storage_bytes = int(
+    scanner(None, d_inp, d_cumsum, add_op, u.size, h_init, None)
+)
+d_temp_storage = cp.empty(
+    temp_storage_bytes if temp_storage_bytes > 0 else 0, dtype=np.uint8
+)
+scanner(d_temp_storage, d_inp, d_cumsum, add_op, u.size, h_init, None)
 
 it_seq = CountingIterator(cp.int64(0))
 d_ema = cp.empty_like(u)
@@ -75,7 +82,34 @@ def combine_op(v: ValueScale, t: cp.int64) -> cp.float64:
     return (1 - alpha) * v.value * alpha ** (t + v.scale)
 
 
-cuda.compute.binary_transform(d_cumsum, it_seq, d_ema, combine_op, u.size)
+transformer = cuda.compute.make_binary_transform(d_cumsum, it_seq, d_ema, combine_op)
+get_bytes_bt = getattr(transformer, "get_temp_storage_bytes", None)
+compute_bt = getattr(transformer, "compute", None)
+if get_bytes_bt is not None and compute_bt is not None:
+    temp_storage_bytes_bt = int(
+        get_bytes_bt(
+            d_cumsum,
+            it_seq,
+            d_ema,
+            combine_op,
+            u.size,
+        )
+    )
+    d_temp_storage_bt = (
+        None
+        if temp_storage_bytes_bt == 0
+        else cp.empty(temp_storage_bytes_bt, dtype=np.uint8)
+    )
+    compute_bt(
+        d_temp_storage_bt,
+        d_cumsum,
+        it_seq,
+        d_ema,
+        combine_op,
+        u.size,
+    )
+else:
+    transformer(d_cumsum, it_seq, d_ema, combine_op, u.size)
 
 d_ema += (alpha ** cp.arange(1, u.size + 1)) * u[0]
 

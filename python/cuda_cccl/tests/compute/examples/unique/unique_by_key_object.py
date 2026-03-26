@@ -35,22 +35,13 @@ uniquer = cuda.compute.make_unique_by_key(
     OpKind.EQUAL_TO,
 )
 
-# Get the temporary storage size.
-temp_storage_size = uniquer(
-    None,
-    d_input_keys,
-    d_input_values,
-    d_output_keys,
-    d_output_values,
-    d_num_selected,
-    OpKind.EQUAL_TO,
-    len(h_input_keys),
+temp_storage_size = int(
+    uniquer(None, d_input_keys, d_input_values, d_output_keys, d_output_values, d_num_selected, OpKind.EQUAL_TO, len(h_input_keys), None)
 )
-
-# Allocate the temporary storage.
-d_temp_storage = cp.empty(temp_storage_size, dtype=np.uint8)
-
-# Perform the unique by key operation.
+ 
+d_temp_storage = cp.empty(
+    temp_storage_size if temp_storage_size > 0 else 0, dtype=np.uint8
+)
 uniquer(
     d_temp_storage,
     d_input_keys,
@@ -60,6 +51,7 @@ uniquer(
     d_num_selected,
     OpKind.EQUAL_TO,
     len(h_input_keys),
+    None,
 )
 
 # Verify the result.

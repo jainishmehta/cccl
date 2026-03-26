@@ -69,7 +69,38 @@ def radix_sort_device(
     end_bit=None,
     stream=None,
 ):
-    # Use the new single-phase API with automatic temp storage allocation
+    sorter = cuda.compute.make_radix_sort(d_in_keys, d_out_keys, d_in_values, d_out_values)
+    get_bytes = getattr(sorter, "get_temp_storage_bytes", None)
+    compute = getattr(sorter, "compute", None)
+    if get_bytes is not None and compute is not None:
+        nbytes = int(
+            get_bytes(
+                d_in_keys,
+                d_out_keys,
+                d_in_values,
+                d_out_values,
+                num_items,
+                order=order,
+                begin_bit=begin_bit,
+                end_bit=end_bit,
+                stream=stream,
+            )
+        )
+        d_temp = cp.empty(nbytes if nbytes > 0 else 0, dtype=np.uint8)
+        compute(
+            d_temp,
+            d_in_keys,
+            d_out_keys,
+            d_in_values,
+            d_out_values,
+            num_items,
+            order=order,
+            begin_bit=begin_bit,
+            end_bit=end_bit,
+            stream=stream,
+        )
+        return
+
     cuda.compute.radix_sort(
         d_in_keys,
         d_out_keys,
@@ -432,13 +463,8 @@ def test_radix_sort_large_num_items(dtype):
     d_in_keys = cp.asarray(h_in_keys)
     d_out_keys = cp.empty(num_items, dtype=dtype)
 
-    cuda.compute.radix_sort(
-        d_in_keys,
-        d_out_keys,
-        None,
-        None,
-        SortOrder.ASCENDING,
-        num_items,
+    radix_sort_device(
+        d_in_keys, d_out_keys, None, None, SortOrder.ASCENDING, num_items
     )
 
     h_out_keys = d_out_keys.get()
@@ -492,7 +518,7 @@ def test_radix_sort(monkeypatch):
     d_out_values = cp.empty_like(d_in_values)
 
     # Call single-phase API directly with num_items parameter
-    cuda.compute.radix_sort(
+    radix_sort_device(
         d_in_keys,
         d_out_keys,
         d_in_values,
@@ -544,7 +570,7 @@ def test_radix_sort_double_buffer(monkeypatch):
     values_double_buffer = DoubleBuffer(d_in_values, d_out_values)
 
     # Call single-phase API directly with num_items parameter
-    cuda.compute.radix_sort(
+    radix_sort_device(
         keys_double_buffer,
         None,
         values_double_buffer,

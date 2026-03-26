@@ -64,16 +64,39 @@ def unique_by_key_device(
     num_items,
     stream=None,
 ):
-    # Call single-phase API directly with all parameters including num_items
+    uniq = cuda.compute.make_unique_by_key(
+        d_in_keys, d_in_items, d_out_keys, d_out_items, d_out_num_selected, op
+    )
+    get_bytes = getattr(uniq, "get_temp_storage_bytes", None)
+    compute = getattr(uniq, "compute", None)
+    if get_bytes is not None and compute is not None:
+        nbytes = int(
+            get_bytes(
+                d_in_keys,
+                d_in_items,
+                d_out_keys,
+                d_out_items,
+                d_out_num_selected,
+                num_items,
+                op=op,
+                stream=stream,
+            )
+        )
+        d_temp = cp.empty(nbytes if nbytes > 0 else 0, dtype=np.uint8)
+        compute(
+            d_temp,
+            d_in_keys,
+            d_in_items,
+            d_out_keys,
+            d_out_items,
+            d_out_num_selected,
+            num_items,
+            op=op,
+            stream=stream,
+        )
+        return
     cuda.compute.unique_by_key(
-        d_in_keys,
-        d_in_items,
-        d_out_keys,
-        d_out_items,
-        d_out_num_selected,
-        op,
-        num_items,
-        stream,
+        d_in_keys, d_in_items, d_out_keys, d_out_items, d_out_num_selected, op, num_items, stream
     )
 
 
@@ -440,7 +463,7 @@ def test_unique_by_key_well_known_equal_to(monkeypatch):
     d_num_selected = cp.empty(1, dtype=dtype)
 
     # Run unique by key with well-known EQUAL_TO operation
-    cuda.compute.unique_by_key(
+    unique_by_key_device(
         d_in_keys,
         d_in_values,
         d_out_keys,

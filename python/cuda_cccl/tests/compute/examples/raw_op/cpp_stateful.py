@@ -92,8 +92,14 @@ d_input = cp.array(h_input)
 d_output = cp.empty(num_items, dtype=np.int32)
 d_num_selected = cp.empty(1, dtype=np.int32)
 
-# Run select with the stateful operator
-cuda.compute.select(d_input, d_output, d_num_selected, select_op, num_items)
+selector = cuda.compute.make_select(d_input, d_output, d_num_selected, select_op)
+temp_storage_bytes = int(
+    selector(None, d_input, d_output, d_num_selected, select_op, num_items, None)
+)
+d_temp_storage = cp.empty(
+    temp_storage_bytes if temp_storage_bytes > 0 else 0, dtype=np.uint8
+)
+selector(d_temp_storage, d_input, d_output, d_num_selected, select_op, num_items, None)
 
 # Get results
 num_selected = d_num_selected.get()[0]

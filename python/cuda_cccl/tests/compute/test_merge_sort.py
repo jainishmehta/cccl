@@ -56,10 +56,78 @@ def type_to_problem_sizes(dtype) -> List[int]:
 def merge_sort_device(
     d_in_keys, d_in_items, d_out_keys, d_out_items, op, num_items, stream=None
 ):
-    # Use the new single-phase API with automatic temp storage allocation
-    cuda.compute.merge_sort(
-        d_in_keys, d_in_items, d_out_keys, d_out_items, op, num_items, stream=stream
+    sorter = cuda.compute.make_merge_sort(
+        d_in_keys=d_in_keys,
+        d_in_items=d_in_items,
+        d_out_keys=d_out_keys,
+        d_out_items=d_out_items,
+        op=op,
     )
+
+    get_bytes = getattr(sorter, "get_temp_storage_bytes", None)
+    compute = getattr(sorter, "compute", None)
+    if get_bytes is not None and compute is not None:
+        temp_storage_bytes = int(
+            get_bytes(
+                d_in_keys=d_in_keys,
+                d_in_items=d_in_items,
+                d_out_keys=d_out_keys,
+                d_out_items=d_out_items,
+                num_items=num_items,
+                op=op,
+                stream=stream,
+            )
+        )
+        d_temp_storage = cp.empty(
+            temp_storage_bytes if temp_storage_bytes > 0 else 0, dtype=np.uint8
+        )
+        compute(
+            temp_storage=d_temp_storage,
+            d_in_keys=d_in_keys,
+            d_in_items=d_in_items,
+            d_out_keys=d_out_keys,
+            d_out_items=d_out_items,
+            op=op,
+            num_items=num_items,
+            stream=stream,
+        )
+        return
+
+    try:
+        temp_storage_bytes = int(
+            sorter(
+                None,
+                d_in_keys,
+                d_in_items,
+                d_out_keys,
+                d_out_items,
+                op,
+                num_items,
+                stream,
+            )
+        )
+    except TypeError:
+        temp_storage_bytes = int(
+            sorter(None, d_in_keys, d_in_items, d_out_keys, d_out_items, op, num_items)
+        )
+    d_temp_storage = cp.empty(
+        temp_storage_bytes if temp_storage_bytes > 0 else 0, dtype=np.uint8
+    )
+    try:
+        sorter(
+            d_temp_storage,
+            d_in_keys,
+            d_in_items,
+            d_out_keys,
+            d_out_items,
+            op,
+            num_items,
+            stream,
+        )
+    except TypeError:
+        sorter(
+            d_temp_storage, d_in_keys, d_in_items, d_out_keys, d_out_items, op, num_items
+        )
 
 
 def compare_op(lhs, rhs):
@@ -293,9 +361,7 @@ def test_merge_sort_well_known_less():
     d_in_keys = cp.array([5, 2, 8, 1, 9, 3], dtype=dtype)
     d_out_keys = cp.empty_like(d_in_keys)
 
-    cuda.compute.merge_sort(
-        d_in_keys, None, d_out_keys, None, OpKind.LESS, len(d_in_keys)
-    )
+    merge_sort_device(d_in_keys, None, d_out_keys, None, OpKind.LESS, len(d_in_keys))
 
     expected = np.array([1, 2, 3, 5, 8, 9])
     np.testing.assert_equal(d_out_keys.get(), expected)
@@ -307,7 +373,7 @@ def test_merge_sort_well_known_greater():
     d_in_keys = cp.array([5, 2, 8, 1, 9, 3], dtype=dtype)
     d_out_keys = cp.empty_like(d_in_keys)
 
-    cuda.compute.merge_sort(
+    merge_sort_device(
         d_in_keys, None, d_out_keys, None, OpKind.GREATER, len(d_in_keys)
     )
 
@@ -355,7 +421,7 @@ def test_merge_sort_with_values_well_known():
     d_out_keys = cp.empty_like(d_in_keys)
     d_out_values = cp.empty_like(d_in_values)
 
-    cuda.compute.merge_sort(
+    merge_sort_device(
         d_in_keys,
         d_in_values,
         d_out_keys,

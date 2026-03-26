@@ -23,17 +23,43 @@ d_histogram = cp.empty(num_levels - 1, dtype="int32")
 lower_level = np.float32(0)
 upper_level = np.float32(12)
 
-# Perform the histogram even.
-cuda.compute.histogram_even(
+h_num_output_levels = np.array([num_levels], dtype=np.int32)
+h_lower_level = np.array([lower_level], dtype=np.float32)
+h_upper_level = np.array([upper_level], dtype=np.float32)
+
+histogrammer = cuda.compute.make_histogram_even(
     d_samples,
     d_histogram,
-    num_levels,
-    lower_level,
-    upper_level,
+    h_num_output_levels,
+    h_lower_level,
+    h_upper_level,
     num_samples,
 )
 
-# Verify the result.
+temp_storage_bytes = int(
+    histogrammer(
+        None,
+        d_samples,
+        d_histogram,
+        h_num_output_levels,
+        h_lower_level,
+        h_upper_level,
+        num_samples,
+    )
+)
+d_temp_storage = cp.empty(
+    temp_storage_bytes if temp_storage_bytes > 0 else 0, dtype=np.uint8
+)
+histogrammer(
+    d_temp_storage,
+    d_samples,
+    d_histogram,
+    h_num_output_levels,
+    h_lower_level,
+    h_upper_level,
+    num_samples,
+)
+
 h_actual_histogram = cp.asnumpy(d_histogram)
 h_expected_histogram, _ = np.histogram(
     h_samples, bins=num_levels - 1, range=(lower_level, upper_level)

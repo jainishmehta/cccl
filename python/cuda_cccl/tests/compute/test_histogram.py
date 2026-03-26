@@ -53,6 +53,123 @@ dtype_size_pairs = [
 ]
 
 
+def _run_histogram_even_multistep(
+    d_samples,
+    d_histogram,
+    num_output_levels,
+    lower_level,
+    upper_level,
+    num_samples,
+    stream=None,
+):
+    hist = cuda.compute.make_histogram_even(
+        d_samples,
+        d_histogram,
+        num_output_levels,
+        lower_level,
+        upper_level,
+        num_samples,
+    )
+
+    get_bytes = getattr(hist, "get_temp_storage_bytes", None)
+    compute = getattr(hist, "compute", None)
+    if get_bytes is not None and compute is not None:
+        try:
+            temp_bytes = int(
+                get_bytes(
+                    d_samples,
+                    d_histogram,
+                    num_output_levels,
+                    lower_level,
+                    upper_level,
+                    num_samples,
+                    stream=stream,
+                )
+            )
+        except TypeError:
+            temp_bytes = int(
+                get_bytes(
+                    d_samples,
+                    d_histogram,
+                    num_output_levels,
+                    lower_level,
+                    upper_level,
+                    num_samples,
+                )
+            )
+        temp_storage = cp.empty(temp_bytes if temp_bytes > 0 else 0, dtype=np.uint8)
+        try:
+            compute(
+                temp_storage,
+                d_samples,
+                d_histogram,
+                num_output_levels,
+                lower_level,
+                upper_level,
+                num_samples,
+                stream=stream,
+            )
+        except TypeError:
+            compute(
+                temp_storage,
+                d_samples,
+                d_histogram,
+                num_output_levels,
+                lower_level,
+                upper_level,
+                num_samples,
+            )
+        return
+
+    try:
+        temp_bytes = int(
+            hist(
+                None,
+                d_samples,
+                d_histogram,
+                num_output_levels,
+                lower_level,
+                upper_level,
+                num_samples,
+                stream,
+            )
+        )
+    except TypeError:
+        temp_bytes = int(
+            hist(
+                None,
+                d_samples,
+                d_histogram,
+                num_output_levels,
+                lower_level,
+                upper_level,
+                num_samples,
+            )
+        )
+    temp_storage = cp.empty(temp_bytes if temp_bytes > 0 else 0, dtype=np.uint8)
+    try:
+        hist(
+            temp_storage,
+            d_samples,
+            d_histogram,
+            num_output_levels,
+            lower_level,
+            upper_level,
+            num_samples,
+            stream,
+        )
+    except TypeError:
+        hist(
+            temp_storage,
+            d_samples,
+            d_histogram,
+            num_output_levels,
+            lower_level,
+            upper_level,
+            num_samples,
+        )
+
+
 def random_int_array(size, dtype):
     if np.issubdtype(dtype, np.integer):
         if dtype in [np.uint8, np.int8]:
@@ -108,7 +225,7 @@ def test_device_histogram_basic_use(dtype, num_samples):
 
     d_histogram = cp.zeros(num_levels - 1, dtype=np.int32)
 
-    cuda.compute.histogram_even(
+    _run_histogram_even_multistep(
         d_samples,
         d_histogram,
         num_levels,
@@ -142,7 +259,7 @@ def test_device_histogram_sample_iterator():
     lower_level = np.int32(0.0)
     upper_level = np.int32(adjusted_total_samples)
 
-    cuda.compute.histogram_even(
+    _run_histogram_even_multistep(
         counting_it,
         d_histogram,
         num_levels,
@@ -168,7 +285,7 @@ def test_device_histogram_single_sample():
 
     d_histogram = cp.zeros(num_levels - 1, dtype=np.int32)
 
-    cuda.compute.histogram_even(
+    _run_histogram_even_multistep(
         d_samples, d_histogram, num_levels, lower_level, upper_level, 1
     )
 
@@ -189,7 +306,7 @@ def test_device_histogram_out_of_range():
 
     d_histogram = cp.zeros(num_levels - 1, dtype=np.int32)
 
-    cuda.compute.histogram_even(
+    _run_histogram_even_multistep(
         d_samples,
         d_histogram,
         num_levels,
@@ -222,7 +339,7 @@ def test_device_histogram_with_stream(cuda_stream):
         d_samples = cp.asarray(h_samples)
         d_histogram = cp.zeros(num_levels - 1, dtype=np.int32)
 
-    cuda.compute.histogram_even(
+    _run_histogram_even_multistep(
         d_samples,
         d_histogram,
         num_levels,
@@ -253,7 +370,7 @@ def test_device_histogram_with_constant_iterator():
 
     d_histogram = cp.zeros(num_levels - 1, dtype=np.int32)
 
-    cuda.compute.histogram_even(
+    _run_histogram_even_multistep(
         constant_it,
         d_histogram,
         num_levels,
@@ -284,8 +401,7 @@ def test_histogram_even():
     lower_level = np.float32(0)
     upper_level = np.float32(12)
 
-    # Run histogram with automatic temp storage allocation
-    cuda.compute.histogram_even(
+    _run_histogram_even_multistep(
         d_samples,
         d_histogram,
         num_levels,
@@ -327,26 +443,7 @@ def test_histogram_cache_bug_crosses_256_bin_threshold():
     d_samples[:] = cp.random.randint(0, num_bins_1, size=num_samples, dtype=np.int32)
     d_histogram[:num_bins_1] = 0
 
-    hist = cuda.compute.make_histogram_even(
-        d_samples,
-        d_histogram[:num_bins_1],
-        h_num_output_levels,
-        h_lower_level,
-        h_upper_level,
-        num_samples,
-    )
-    temp_bytes = hist(
-        None,
-        d_samples,
-        d_histogram[:num_bins_1],
-        h_num_output_levels,
-        h_lower_level,
-        h_upper_level,
-        num_samples,
-    )
-    temp_storage = cp.empty(temp_bytes, dtype=np.uint8)
-    hist(
-        temp_storage,
+    _run_histogram_even_multistep(
         d_samples,
         d_histogram[:num_bins_1],
         h_num_output_levels,
@@ -365,27 +462,7 @@ def test_histogram_cache_bug_crosses_256_bin_threshold():
     d_samples[:] = cp.random.randint(0, num_bins_2, size=num_samples, dtype=np.int32)
     d_histogram[:num_bins_2] = 0
 
-    hist2 = cuda.compute.make_histogram_even(
-        d_samples,
-        d_histogram[:num_bins_2],
-        h_num_output_levels,
-        h_lower_level,
-        h_upper_level,
-        num_samples,
-    )
-
-    temp_bytes2 = hist2(
-        None,
-        d_samples,
-        d_histogram[:num_bins_2],
-        h_num_output_levels,
-        h_lower_level,
-        h_upper_level,
-        num_samples,
-    )
-    temp_storage2 = cp.empty(temp_bytes2, dtype=np.uint8)
-    hist2(
-        temp_storage2,
+    _run_histogram_even_multistep(
         d_samples,
         d_histogram[:num_bins_2],
         h_num_output_levels,

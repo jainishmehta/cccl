@@ -22,6 +22,39 @@ from cuda.compute.iterators import (
 )
 
 
+def _reduce_into_run(d_in, d_out, op, num_items, h_init, stream=None):
+    reducer = cuda.compute.make_reduce_into(d_in, d_out, op, h_init)
+    get_bytes = getattr(reducer, "get_temp_storage_bytes", None)
+    compute = getattr(reducer, "compute", None)
+    if get_bytes is not None and compute is not None:
+        try:
+            temp_storage_bytes = int(
+                get_bytes(d_in, d_out, num_items, h_init=h_init, stream=stream)
+            )
+        except TypeError:
+            temp_storage_bytes = int(get_bytes(d_in, d_out, num_items, h_init=h_init))
+        d_temp_storage = cp.empty(
+            temp_storage_bytes if temp_storage_bytes > 0 else 0, dtype=np.uint8
+        )
+        try:
+            compute(d_temp_storage, d_in, d_out, num_items, h_init=h_init, stream=stream)
+        except TypeError:
+            compute(d_temp_storage, d_in, d_out, num_items, h_init=h_init)
+        return
+
+    try:
+        tmp_storage_bytes = int(reducer(None, d_in, d_out, op, num_items, h_init, stream))
+    except TypeError:
+        tmp_storage_bytes = int(reducer(None, d_in, d_out, op, num_items, h_init))
+    d_temp_storage = cp.empty(
+        tmp_storage_bytes if tmp_storage_bytes > 0 else 0, dtype=np.uint8
+    )
+    try:
+        reducer(d_temp_storage, d_in, d_out, op, num_items, h_init, stream)
+    except TypeError:
+        reducer(d_temp_storage, d_in, d_out, op, num_items, h_init)
+
+
 def test_constant_iterator_equality():
     it1 = ConstantIterator(np.int32(0))
     it2 = ConstantIterator(np.int32(0))
@@ -208,7 +241,7 @@ def test_transform_iterator_with_lambda():
     d_output = cp.empty(1, dtype=np.int32)
 
     # Perform reduction on the transformed iterator
-    cuda.compute.reduce_into(transform_it, d_output, OpKind.PLUS, num_items, h_init)
+    _reduce_into_run(transform_it, d_output, OpKind.PLUS, num_items, h_init)
 
     # Expected: sum of (10*2, 11*2, ..., 109*2) = 2 * sum(10..109)
     expected = 2 * sum(range(first_item, first_item + num_items))
@@ -238,7 +271,7 @@ def test_transform_iterator_with_zip_iterator():
     h_init = np.array([0], dtype=np.int32)
     d_output = cp.empty(1, dtype=np.int32)
 
-    cuda.compute.reduce_into(transform_it, d_output, OpKind.PLUS, len(d_a), h_init)
+    _reduce_into_run(transform_it, d_output, OpKind.PLUS, len(d_a), h_init)
 
     result = d_output.get()[0]
     expected = (d_a + d_b).sum().get()

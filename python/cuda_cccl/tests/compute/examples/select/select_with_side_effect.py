@@ -7,7 +7,7 @@
 import cupy as cp
 from numba import cuda as numba_cuda
 
-from cuda.compute.algorithms import select
+from cuda.compute.algorithms import make_select
 
 # Create input data: values 0 to 99
 d_in = cp.arange(100, dtype=cp.int32)
@@ -28,7 +28,14 @@ def count_rejects(x):
 
 
 # Execute select - selects even numbers, counts rejections
-select(d_in, d_out, d_num_selected, count_rejects, len(d_in))
+selector = make_select(d_in, d_out, d_num_selected, count_rejects)
+temp_storage_bytes = int(
+    selector(None, d_in, d_out, d_num_selected, count_rejects, len(d_in), None)
+)
+d_temp_storage = cp.empty(
+    temp_storage_bytes if temp_storage_bytes > 0 else 0, dtype=cp.uint8
+)
+selector(d_temp_storage, d_in, d_out, d_num_selected, count_rejects, len(d_in), None)
 
 # Get results
 num_selected = int(d_num_selected.get()[0])
