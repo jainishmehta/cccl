@@ -60,18 +60,19 @@ TEST_CASE("Device scan exclusive scan works with default environment", "[scan][d
   using value_t     = int;
   using offset_t    = cub::detail::choose_offset_t<num_items_t>;
 
-  using selector_t =
-    cub::detail::scan::policy_selector_from_types<value_t, value_t, value_t, offset_t, block_size_check_t>;
+  num_items_t num_items = 2;
+  auto d_in             = cuda::constant_iterator(value_t{1});
+  auto d_out            = c2h::device_vector<value_t>(num_items);
+
+  using selector_t = cub::detail::scan::
+    policy_selector_from_types<decltype(d_in), decltype(d_out.begin()), value_t, offset_t, block_size_check_t>;
 
   cuda::arch_id arch_id;
   REQUIRE(cudaSuccess == cub::detail::ptx_arch_id(arch_id));
-  const auto target_block_size = selector_t{}(arch_id).block_threads;
+  const auto target_block_size = selector_t{}(arch_id).lookback.block_threads;
 
-  num_items_t num_items = 2;
   c2h::device_vector<int> d_block_size(1);
   block_size_check_t block_size_check{thrust::raw_pointer_cast(d_block_size.data())};
-  auto d_in  = cuda::constant_iterator(value_t{1});
-  auto d_out = c2h::device_vector<value_t>(num_items);
 
   auto init = value_t{42};
   REQUIRE(cudaSuccess == cub::DeviceScan::ExclusiveScan(d_in, d_out.begin(), block_size_check, init, num_items));
@@ -121,13 +122,14 @@ struct scan_tuning
 {
   _CCCL_API constexpr auto operator()(cuda::arch_id /*arch*/) const -> cub::detail::scan::scan_policy
   {
-    return {BlockThreads,
-            1,
-            cub::BlockLoadAlgorithm::BLOCK_LOAD_WARP_TRANSPOSE,
-            cub::CacheLoadModifier::LOAD_DEFAULT,
-            cub::BlockStoreAlgorithm::BLOCK_STORE_WARP_TRANSPOSE,
-            cub::BlockScanAlgorithm::BLOCK_SCAN_RAKING,
-            cub::detail::default_delay_constructor_policy(true),
+    return {cub::detail::scan::scan_algorithm::lookback,
+            {BlockThreads,
+             1,
+             cub::BlockLoadAlgorithm::BLOCK_LOAD_WARP_TRANSPOSE,
+             cub::CacheLoadModifier::LOAD_DEFAULT,
+             cub::BlockStoreAlgorithm::BLOCK_STORE_WARP_TRANSPOSE,
+             cub::BlockScanAlgorithm::BLOCK_SCAN_RAKING,
+             cub::detail::default_delay_constructor_policy(true)},
             {}};
   }
 };
@@ -208,18 +210,20 @@ TEST_CASE("Device scan inclusive-scan works with default environment", "[scan][d
   using value_t     = int;
   using offset_t    = cub::detail::choose_offset_t<num_items_t>;
 
-  using selector_t =
-    cub::detail::scan::policy_selector_from_types<value_t, value_t, value_t, offset_t, block_size_check_t>;
+  num_items_t num_items = 2;
+  auto d_in             = cuda::constant_iterator(value_t{1});
+  auto d_out            = c2h::device_vector<value_t>(num_items);
+
+  using selector_t = cub::detail::scan::
+    policy_selector_from_types<decltype(d_in), decltype(d_out.begin()), value_t, offset_t, block_size_check_t>;
 
   cuda::arch_id arch_id;
   REQUIRE(cudaSuccess == cub::detail::ptx_arch_id(arch_id));
-  const auto target_block_size = selector_t{}(arch_id).block_threads;
+  const auto target_block_size = selector_t{}(arch_id).lookback.block_threads;
 
-  num_items_t num_items = 2;
   c2h::device_vector<int> d_block_size(1);
   block_size_check_t block_size_check{thrust::raw_pointer_cast(d_block_size.data())};
-  auto d_in  = cuda::constant_iterator(value_t{1});
-  auto d_out = c2h::device_vector<value_t>(num_items);
+
   REQUIRE(cudaSuccess == cub::DeviceScan::InclusiveScan(d_in, d_out.begin(), block_size_check, num_items));
   REQUIRE(d_out[0] == d_in[0]);
   REQUIRE(d_out[1] == d_in[0] + d_in[1]);
