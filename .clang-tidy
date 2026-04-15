@@ -27,7 +27,6 @@ Checks:
   - '-modernize-deprecated-headers'
   - '-modernize-use-using'
   - '-modernize-use-integer-sign-comparison'
-  - '-modernize-concat-nested-namespaces'
   - '-modernize-use-nodiscard'
   - '-modernize-use-default-member-init'
   - '-modernize-use-equals-default'
