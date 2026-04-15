@@ -40,7 +40,6 @@ Checks:
   - '-modernize-use-equals-delete'
   - '-modernize-loop-convert'
   - '-modernize-unary-static-assert'
-  - '-modernize-use-override'
   # END REMOVE ME
   # TODO(jfaibussowit):
   #
