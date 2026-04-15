@@ -25,7 +25,6 @@ Checks:
   - '-performance-unnecessary-value-param'
   - 'modernize-*'
   - '-modernize-deprecated-headers'
-  - '-modernize-min-max-use-initializer-list'
   - '-modernize-make-unique'
   - '-modernize-use-using'
   - '-modernize-use-integer-sign-comparison'
