@@ -51,15 +51,19 @@ def test_lower_bound_basic(dtype, num_items, num_values):
     d_out = cp.empty(num_values, dtype=np.uintp)
 
     searcher = cuda.compute.make_lower_bound(d_data, d_values, d_out)
-    temp_storage_bytes = searcher.get_temp_storage_bytes(
-        d_data,
-        d_values,
-        d_out,
-        comp=None,
-        num_items=num_items,
-        num_values=num_values,
+    temp_storage_bytes = int(
+        searcher.get_temp_storage_bytes(
+            d_data,
+            d_values,
+            d_out,
+            comp=None,
+            num_items=num_items,
+            num_values=num_values,
+        )
     )
-    d_temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
+    d_temp_storage = (
+        None if temp_storage_bytes == 0 else cp.empty(temp_storage_bytes, dtype=np.uint8)
+    )
     searcher.compute(
         d_temp_storage,
         d_data,
@@ -88,15 +92,19 @@ def test_upper_bound_basic(dtype, num_items, num_values):
     d_out = cp.empty(num_values, dtype=np.uintp)
 
     searcher = cuda.compute.make_upper_bound(d_data, d_values, d_out)
-    temp_storage_bytes = searcher.get_temp_storage_bytes(
-        d_data,
-        d_values,
-        d_out,
-        comp=None,
-        num_items=num_items,
-        num_values=num_values,
+    temp_storage_bytes = int(
+        searcher.get_temp_storage_bytes(
+            d_data,
+            d_values,
+            d_out,
+            comp=None,
+            num_items=num_items,
+            num_values=num_values,
+        )
     )
-    d_temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
+    d_temp_storage = (
+        None if temp_storage_bytes == 0 else cp.empty(temp_storage_bytes, dtype=np.uint8)
+    )
     searcher.compute(
         d_temp_storage,
         d_data,
@@ -132,15 +140,21 @@ def test_binary_search_with_duplicates(dtype):
     d_out = cp.empty(len(h_values), dtype=np.uintp)
 
     lower_searcher = cuda.compute.make_lower_bound(d_data, d_values, d_out)
-    lower_temp_storage_bytes = lower_searcher.get_temp_storage_bytes(
-        d_data,
-        d_values,
-        d_out,
-        comp=None,
-        num_items=len(h_data),
-        num_values=len(h_values),
+    lower_temp_storage_bytes = int(
+        lower_searcher.get_temp_storage_bytes(
+            d_data,
+            d_values,
+            d_out,
+            comp=None,
+            num_items=len(h_data),
+            num_values=len(h_values),
+        )
     )
-    d_lower_temp_storage = cp.empty(lower_temp_storage_bytes, dtype=np.uint8)
+    d_lower_temp_storage = (
+        None
+        if lower_temp_storage_bytes == 0
+        else cp.empty(lower_temp_storage_bytes, dtype=np.uint8)
+    )
     lower_searcher.compute(
         d_lower_temp_storage,
         d_data,
@@ -155,15 +169,21 @@ def test_binary_search_with_duplicates(dtype):
     assert np.array_equal(got, expected)
 
     upper_searcher = cuda.compute.make_upper_bound(d_data, d_values, d_out)
-    upper_temp_storage_bytes = upper_searcher.get_temp_storage_bytes(
-        d_data,
-        d_values,
-        d_out,
-        comp=None,
-        num_items=len(h_data),
-        num_values=len(h_values),
+    upper_temp_storage_bytes = int(
+        upper_searcher.get_temp_storage_bytes(
+            d_data,
+            d_values,
+            d_out,
+            comp=None,
+            num_items=len(h_data),
+            num_values=len(h_values),
+        )
     )
-    d_upper_temp_storage = cp.empty(upper_temp_storage_bytes, dtype=np.uint8)
+    d_upper_temp_storage = (
+        None
+        if upper_temp_storage_bytes == 0
+        else cp.empty(upper_temp_storage_bytes, dtype=np.uint8)
+    )
     upper_searcher.compute(
         d_upper_temp_storage,
         d_data,

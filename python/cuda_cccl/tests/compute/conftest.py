@@ -93,6 +93,14 @@ def verify_sass(request, monkeypatch):
     if request.node.get_closest_marker("no_verify_sass"):
         return
 
+    # _cccl_interop imports symbols from the native _bindings_impl extension. If the
+    # extension was not built (editable install without a successful CMake build),
+    # skip SASS verification rather than failing during fixture setup.
+    import cuda.compute
+
+    if not cuda.compute._BINDINGS_AVAILABLE:
+        return
+
     import cuda.compute._cccl_interop
 
     monkeypatch.setattr(

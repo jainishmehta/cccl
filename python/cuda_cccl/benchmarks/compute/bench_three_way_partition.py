@@ -25,16 +25,14 @@ def three_way_partition_pointer(
         num_selected,
         less_than_op,
         greater_equal_op,
+    )               
+    temp_storage_bytes = partitioner.get_temp_storage_bytes(
+        inp, first_out, second_out, unselected_out, num_selected, size
     )
-
-    if not build_only:
-        temp_storage_bytes = partitioner.get_temp_storage_bytes(
-            inp, first_out, second_out, unselected_out, num_selected, size
-        )
-        temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
-        partitioner.compute(
-            temp_storage, inp, first_out, second_out, unselected_out, num_selected, size
-        )
+    temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
+    partitioner.compute(
+        temp_storage, inp, first_out, second_out, unselected_out, num_selected, size
+    )
 
     cp.cuda.runtime.deviceSynchronize()
 
@@ -60,7 +58,13 @@ def three_way_partition_iterator(
         greater_equal_op,
     )
 
-    if not build_only:
+    temp_storage_bytes = partitioner.get_temp_storage_bytes(
+        in_it, first_out, second_out, unselected_out, num_selected, size
+    )
+    temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
+    partitioner.compute(
+        temp_storage, in_it, first_out, second_out, unselected_out, num_selected, size
+    )
         temp_storage_bytes = partitioner.get_temp_storage_bytes(
             in_it, first_out, second_out, unselected_out, num_selected, size
         )

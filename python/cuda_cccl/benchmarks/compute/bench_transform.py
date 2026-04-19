@@ -17,10 +17,9 @@ def unary_transform_pointer(inp, out, build_only):
         return a + 1
 
     transform = cuda.compute.make_unary_transform(inp, out, op)
-    if not build_only:
-        temp_storage_bytes = transform.get_temp_storage_bytes(inp, out, op, size)
-        temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
-        transform.compute(temp_storage, inp, out, op, size)
+    temp_storage_bytes = transform.get_temp_storage_bytes(inp, out, op, size)
+    temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
+    transform.compute(temp_storage, inp, out, op, size)
 
     cp.cuda.runtime.deviceSynchronize()
 
@@ -32,10 +31,9 @@ def unary_transform_iterator(size, out, build_only):
         return a + 1
 
     transform = cuda.compute.make_unary_transform(d_in, out, op)
-    if not build_only:
-        temp_storage_bytes = transform.get_temp_storage_bytes(d_in, out, op, size)
-        temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
-        transform.compute(temp_storage, d_in, out, op, size)
+    temp_storage_bytes = transform.get_temp_storage_bytes(d_in, out, op, size)
+    temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
+    transform.compute(temp_storage, d_in, out, op, size)
 
     cp.cuda.runtime.deviceSynchronize()
 
@@ -53,10 +51,9 @@ def unary_transform_struct(inp, out, build_only):
         return MyStruct(a.x + 1, a.y + 1)
 
     transform = cuda.compute.make_unary_transform(inp, out, op)
-    if not build_only:
-        temp_storage_bytes = transform.get_temp_storage_bytes(inp, out, op, size)
-        temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
-        transform.compute(temp_storage, inp, out, op, size)
+    temp_storage_bytes = transform.get_temp_storage_bytes(inp, out, op, size)
+    temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
+    transform.compute(temp_storage, inp, out, op, size)
 
     cp.cuda.runtime.deviceSynchronize()
 
@@ -65,10 +62,9 @@ def binary_transform_pointer(inp1, inp2, out, build_only):
     size = len(inp1)
 
     transform = cuda.compute.make_binary_transform(inp1, inp2, out, OpKind.PLUS)
-    if not build_only:
-        temp_storage_bytes = transform.get_temp_storage_bytes(inp1, inp2, out, OpKind.PLUS, size)
-        temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
-        transform.compute(temp_storage, inp1, inp2, out, OpKind.PLUS, size)
+    temp_storage_bytes = transform.get_temp_storage_bytes(inp1, inp2, out, OpKind.PLUS, size)
+    temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
+    transform.compute(temp_storage, inp1, inp2, out, OpKind.PLUS, size)
 
     cp.cuda.runtime.deviceSynchronize()
 
@@ -80,10 +76,9 @@ def binary_transform_pointer_custom_op(inp1, inp2, out, build_only):
         return a + b
 
     transform = cuda.compute.make_binary_transform(inp1, inp2, out, op)
-    if not build_only:
-        temp_storage_bytes = transform.get_temp_storage_bytes(inp1, inp2, out, op, size)
-        temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
-        transform.compute(temp_storage, inp1, inp2, out, op, size)
+    temp_storage_bytes = transform.get_temp_storage_bytes(inp1, inp2, out, op, size)
+    temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
+    transform.compute(temp_storage, inp1, inp2, out, op, size)
 
     cp.cuda.runtime.deviceSynchronize()
 
@@ -93,10 +88,9 @@ def binary_transform_iterator(size, out, build_only):
     d_in2 = CountingIterator(np.int32(1))
 
     transform = cuda.compute.make_binary_transform(d_in1, d_in2, out, OpKind.PLUS)
-    if not build_only:
-        temp_storage_bytes = transform.get_temp_storage_bytes(d_in1, d_in2, out, OpKind.PLUS, size)
-        temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
-        transform.compute(temp_storage, d_in1, d_in2, out, OpKind.PLUS, size)
+    temp_storage_bytes = transform.get_temp_storage_bytes(d_in1, d_in2, out, OpKind.PLUS, size)
+    temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
+    transform.compute(temp_storage, d_in1, d_in2, out, OpKind.PLUS, size)
 
     cp.cuda.runtime.deviceSynchronize()
 
@@ -108,10 +102,9 @@ def binary_transform_struct(inp1, inp2, out, build_only):
         return MyStruct(a.x + b.x, a.y + b.y)
 
     transform = cuda.compute.make_binary_transform(inp1, inp2, out, op)
-    if not build_only:
-        temp_storage_bytes = transform.get_temp_storage_bytes(inp1, inp2, out, op, size)
-        temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
-        transform.compute(temp_storage, inp1, inp2, out, op, size)
+    temp_storage_bytes = transform.get_temp_storage_bytes(inp1, inp2, out, op, size)
+    temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
+    transform.compute(temp_storage, inp1, inp2, out, op, size)
 
     cp.cuda.runtime.deviceSynchronize()
 

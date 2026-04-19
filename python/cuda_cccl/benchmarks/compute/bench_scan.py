@@ -20,12 +20,11 @@ def scan_pointer(input_array, build_only, scan_type):
     else:  # inclusive
         alg = cuda.compute.make_inclusive_scan(input_array, res, OpKind.PLUS, h_init)
 
-    if not build_only:
-        temp_storage_bytes = alg.get_temp_storage_bytes(
-            input_array, res, size, init_value=h_init
-        )
-        temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
-        alg.compute(temp_storage, input_array, res, size, init_value=h_init)
+    temp_storage_bytes = alg.get_temp_storage_bytes(
+        input_array, res, size, init_value=h_init
+    )
+    temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
+    alg.compute(temp_storage, input_array, res, size, init_value=h_init)
 
     cp.cuda.runtime.deviceSynchronize()
 
@@ -43,12 +42,11 @@ def scan_pointer_custom_op(input_array, build_only, scan_type):
     else:  # inclusive
         alg = cuda.compute.make_inclusive_scan(input_array, res, my_add, h_init)
 
-    if not build_only:
-        temp_storage_bytes = alg.get_temp_storage_bytes(
-            input_array, res, size, init_value=h_init, op=my_add
-        )
-        temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
-        alg.compute(temp_storage, input_array, res, size, init_value=h_init, op=my_add)
+    temp_storage_bytes = alg.get_temp_storage_bytes(
+        input_array, res, size, init_value=h_init, op=my_add
+    )
+    temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
+    alg.compute(temp_storage, input_array, res, size, init_value=h_init, op=my_add)
 
     cp.cuda.runtime.deviceSynchronize()
 
@@ -66,12 +64,11 @@ def scan_struct(input_array, build_only, scan_type):
     else:  # inclusive
         alg = cuda.compute.make_inclusive_scan(input_array, res, my_add, h_init)
 
-    if not build_only:
-        temp_storage_bytes = alg.get_temp_storage_bytes(
-            input_array, res, size, init_value=h_init, op=my_add
-        )
-        temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
-        alg.compute(temp_storage, input_array, res, size, init_value=h_init, op=my_add)
+    temp_storage_bytes = alg.get_temp_storage_bytes(
+        input_array, res, size, init_value=h_init, op=my_add
+    )
+    temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
+    alg.compute(temp_storage, input_array, res, size, init_value=h_init, op=my_add)
 
     cp.cuda.runtime.deviceSynchronize()
 
@@ -85,10 +82,9 @@ def scan_iterator(inp, size, build_only, scan_type):
     else:  # inclusive
         alg = cuda.compute.make_inclusive_scan(inp, res, OpKind.PLUS, h_init)
 
-    if not build_only:
-        temp_storage_bytes = alg.get_temp_storage_bytes(inp, res, size, init_value=h_init)
-        temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
-        alg.compute(temp_storage, inp, res, size, init_value=h_init)
+    temp_storage_bytes = alg.get_temp_storage_bytes(inp, res, size, init_value=h_init)
+    temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
+    alg.compute(temp_storage, inp, res, size, init_value=h_init)
 
     cp.cuda.runtime.deviceSynchronize()
 

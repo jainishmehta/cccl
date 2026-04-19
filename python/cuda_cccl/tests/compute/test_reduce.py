@@ -110,7 +110,7 @@ def test_device_reduce(dtype, num_items, op):
     h_input = random_int(num_items, dtype)
     d_input = numba.cuda.to_device(h_input)
 
-    cuda.compute.reduce_into(d_input, d_output, op, d_input.size, h_init)
+    reduce_into_multi_phase(d_input, d_output, op, d_input.size, h_init)
     h_output = d_output.copy_to_host()
     assert h_output[0] == pytest.approx(
         sum(h_input) + init_value, rel=0.08 if dtype == np.float16 else 0

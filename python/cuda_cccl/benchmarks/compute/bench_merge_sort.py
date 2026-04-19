@@ -16,12 +16,11 @@ def merge_sort_pointer(keys, vals, output_keys, output_vals, build_only):
     alg = cuda.compute.make_merge_sort(
         keys, vals, output_keys, output_vals, OpKind.LESS
     )
-    if not build_only:
-        temp_storage_bytes = alg(
-            None, keys, vals, output_keys, output_vals, OpKind.LESS, size
-        )
-        temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
-        alg(temp_storage, keys, vals, output_keys, output_vals, OpKind.LESS, size)
+    temp_storage_bytes = alg(
+        None, keys, vals, output_keys, output_vals, OpKind.LESS, size
+    )
+    temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
+    alg(temp_storage, keys, vals, output_keys, output_vals, OpKind.LESS, size)
 
     cp.cuda.runtime.deviceSynchronize()
 
@@ -33,12 +32,11 @@ def merge_sort_pointer_custom_op(keys, vals, output_keys, output_vals, build_onl
         return np.int32(a < b)
 
     alg = cuda.compute.make_merge_sort(keys, vals, output_keys, output_vals, my_cmp)
-    if not build_only:
-        temp_storage_bytes = alg(
-            None, keys, vals, output_keys, output_vals, my_cmp, size
-        )
-        temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
-        alg(temp_storage, keys, vals, output_keys, output_vals, my_cmp, size)
+    temp_storage_bytes = alg(
+        None, keys, vals, output_keys, output_vals, my_cmp, size
+    )
+    temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
+    alg(temp_storage, keys, vals, output_keys, output_vals, my_cmp, size)
 
     cp.cuda.runtime.deviceSynchronize()
 
@@ -47,12 +45,11 @@ def merge_sort_iterator(size, keys, vals, output_keys, output_vals, build_only):
     alg = cuda.compute.make_merge_sort(
         keys, vals, output_keys, output_vals, OpKind.LESS
     )
-    if not build_only:
-        temp_storage_bytes = alg(
-            None, keys, vals, output_keys, output_vals, OpKind.LESS, size
-        )
-        temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
-        alg(temp_storage, keys, vals, output_keys, output_vals, OpKind.LESS, size)
+    temp_storage_bytes = alg(
+        None, keys, vals, output_keys, output_vals, OpKind.LESS, size
+    )
+    temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
+    alg(temp_storage, keys, vals, output_keys, output_vals, OpKind.LESS, size)
 
     cp.cuda.runtime.deviceSynchronize()
 
@@ -70,12 +67,11 @@ def merge_sort_struct(size, keys, vals, output_keys, output_vals, build_only):
         return np.int8(a.x < b.x)
 
     alg = cuda.compute.make_merge_sort(keys, vals, output_keys, output_vals, my_cmp)
-    if not build_only:
-        temp_storage_bytes = alg(
-            None, keys, vals, output_keys, output_vals, my_cmp, size
-        )
-        temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
-        alg(temp_storage, keys, vals, output_keys, output_vals, my_cmp, size)
+    temp_storage_bytes = alg(
+        None, keys, vals, output_keys, output_vals, my_cmp, size
+    )
+    temp_storage = cp.empty(temp_storage_bytes, dtype=np.uint8)
+    alg(temp_storage, keys, vals, output_keys, output_vals, my_cmp, size)
 
     cp.cuda.runtime.deviceSynchronize()
 
