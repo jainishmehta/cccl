@@ -29,16 +29,13 @@
 
 #include <cuda/__cmath/ceil_div.h>
 #include <cuda/std/__algorithm/min.h>
+#include <cuda/std/__host_stdlib/sstream>
 #include <cuda/std/__iterator/reverse_iterator.h>
 #include <cuda/std/__type_traits/is_same.h>
 #include <cuda/std/cstdint>
 #include <cuda/std/limits>
 
 #include <nv/target>
-
-#if !_CCCL_COMPILER(NVRTC) && defined(CUB_DEBUG_LOG)
-#  include <sstream>
-#endif // !_CCCL_COMPILER(NVRTC) && defined(CUB_DEBUG_LOG)
 
 CUB_NAMESPACE_BEGIN
 
@@ -182,26 +179,26 @@ template <typename LargeKernelT,
           typename BeginOffsetIteratorT,
           typename EndOffsetIteratorT,
           typename KernelLauncherFactory>
-__launch_bounds__(1) CUB_DETAIL_KERNEL_ATTRIBUTES void DeviceSegmentedSortContinuationKernel(
-  LargeKernelT large_kernel,
-  SmallKernelT small_kernel,
-  local_segment_index_t num_segments,
-  KeyT* d_current_keys,
-  KeyT* d_final_keys,
+__launch_bounds__(1) _CCCL_KERNEL_ATTRIBUTES void DeviceSegmentedSortContinuationKernel(
+  _CCCL_GRID_CONSTANT const LargeKernelT large_kernel,
+  _CCCL_GRID_CONSTANT const SmallKernelT small_kernel,
+  _CCCL_GRID_CONSTANT const local_segment_index_t num_segments,
+  _CCCL_GRID_CONSTANT KeyT* const d_current_keys,
+  _CCCL_GRID_CONSTANT KeyT* const d_final_keys,
   device_double_buffer<KeyT> d_keys_double_buffer,
-  ValueT* d_current_values,
-  ValueT* d_final_values,
+  _CCCL_GRID_CONSTANT ValueT* const d_current_values,
+  _CCCL_GRID_CONSTANT ValueT* const d_final_values,
   device_double_buffer<ValueT> d_values_double_buffer,
-  BeginOffsetIteratorT d_begin_offsets,
-  EndOffsetIteratorT d_end_offsets,
-  local_segment_index_t* group_sizes,
-  local_segment_index_t* large_and_medium_segments_indices,
-  local_segment_index_t* small_segments_indices,
-  KernelLauncherFactory launcher_factory,
-  int large_block_threads,
-  int small_block_threads,
-  int medium_segments_per_block,
-  int small_segments_per_block)
+  _CCCL_GRID_CONSTANT const BeginOffsetIteratorT d_begin_offsets,
+  _CCCL_GRID_CONSTANT const EndOffsetIteratorT d_end_offsets,
+  _CCCL_GRID_CONSTANT local_segment_index_t* const group_sizes,
+  _CCCL_GRID_CONSTANT local_segment_index_t* const large_and_medium_segments_indices,
+  _CCCL_GRID_CONSTANT local_segment_index_t* const small_segments_indices,
+  _CCCL_GRID_CONSTANT const KernelLauncherFactory launcher_factory,
+  _CCCL_GRID_CONSTANT const int large_block_threads,
+  _CCCL_GRID_CONSTANT const int small_block_threads,
+  _CCCL_GRID_CONSTANT const int medium_segments_per_block,
+  _CCCL_GRID_CONSTANT const int small_segments_per_block)
 {
   // In case of CDP:
   // 1. each CTA has a different main stream
@@ -321,15 +318,15 @@ struct policy_selector_from_hub
         sp::WARP_THREADS,
         sp::ITEMS_PER_THREAD,
         sp::LOAD_ALGORITHM,
-        sp::STORE_ALGORITHM,
-        sp::LOAD_MODIFIER},
+        sp::LOAD_MODIFIER,
+        sp::STORE_ALGORITHM},
       sub_warp_merge_sort_policy{
         mp::BLOCK_THREADS,
         mp::WARP_THREADS,
         mp::ITEMS_PER_THREAD,
         mp::LOAD_ALGORITHM,
-        mp::STORE_ALGORITHM,
-        mp::LOAD_MODIFIER},
+        mp::LOAD_MODIFIER,
+        mp::STORE_ALGORITHM},
       ap::PARTITIONING_THRESHOLD};
   }
 };

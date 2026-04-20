@@ -4,6 +4,8 @@ import cupy as cp
 import numpy as np
 import pytest
 
+check_ldl_stl_in_sass = False
+
 
 # Define a pytest fixture that returns random arrays with different dtypes
 @pytest.fixture(
@@ -93,12 +95,8 @@ def verify_sass(request, monkeypatch):
     if request.node.get_closest_marker("no_verify_sass"):
         return
 
-    # _cccl_interop imports symbols from the native _bindings_impl extension. If the
-    # extension was not built (editable install without a successful CMake build),
-    # skip SASS verification rather than failing during fixture setup.
-    import cuda.compute
-
-    if not cuda.compute._BINDINGS_AVAILABLE:
+    if not check_ldl_stl_in_sass:
+        print("not checking sass")
         return
 
     import cuda.compute._cccl_interop

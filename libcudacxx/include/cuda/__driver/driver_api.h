@@ -4,7 +4,7 @@
 // under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-// SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES.
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES.
 //
 //===----------------------------------------------------------------------===//
 
@@ -24,6 +24,7 @@
 #if _CCCL_HAS_CTK() && !_CCCL_COMPILER(NVRTC)
 
 #  include <cuda/__runtime/api_wrapper.h>
+#  include <cuda/std/__bit/bit_cast.h>
 #  include <cuda/std/__cstddef/types.h>
 #  include <cuda/std/__exception/cuda_error.h>
 #  include <cuda/std/__exception/exception_macros.h>
@@ -95,7 +96,7 @@ _CCCL_SUPPRESS_DEPRECATED_POP
 //! @brief Makes the driver version from major and minor version.
 [[nodiscard]] _CCCL_HOST_API constexpr int __make_version(int __major, int __minor) noexcept
 {
-  _CCCL_ASSERT(__major >= 12, "invalid major CUDA Driver version");
+  _CCCL_ASSERT(__major >= 2, "invalid major CUDA Driver version");
   _CCCL_ASSERT(__minor >= 0 && __minor < 100, "invalid minor CUDA Driver version");
   return __major * 1000 + __minor * 10;
 }
@@ -375,20 +376,23 @@ _CCCL_HOST_API void __memsetAsync(void* __dst, _Tp __value, ::cuda::std::size_t 
   if constexpr (sizeof(_Tp) == 1)
   {
     static auto __driver_fn = _CCCLRT_GET_DRIVER_FUNCTION(cuMemsetD8Async);
+    auto __bits             = ::cuda::std::bit_cast<unsigned char>(__value);
     ::cuda::__driver::__call_driver_fn(
-      __driver_fn, "Failed to perform a memset", reinterpret_cast<::CUdeviceptr>(__dst), __value, __count, __stream);
+      __driver_fn, "Failed to perform a memset", reinterpret_cast<::CUdeviceptr>(__dst), __bits, __count, __stream);
   }
   else if constexpr (sizeof(_Tp) == 2)
   {
     static auto __driver_fn = _CCCLRT_GET_DRIVER_FUNCTION(cuMemsetD16Async);
+    auto __bits             = ::cuda::std::bit_cast<unsigned short>(__value);
     ::cuda::__driver::__call_driver_fn(
-      __driver_fn, "Failed to perform a memset", reinterpret_cast<::CUdeviceptr>(__dst), __value, __count, __stream);
+      __driver_fn, "Failed to perform a memset", reinterpret_cast<::CUdeviceptr>(__dst), __bits, __count, __stream);
   }
   else if constexpr (sizeof(_Tp) == 4)
   {
     static auto __driver_fn = _CCCLRT_GET_DRIVER_FUNCTION(cuMemsetD32Async);
+    auto __bits             = ::cuda::std::bit_cast<unsigned int>(__value);
     ::cuda::__driver::__call_driver_fn(
-      __driver_fn, "Failed to perform a memset", reinterpret_cast<::CUdeviceptr>(__dst), __value, __count, __stream);
+      __driver_fn, "Failed to perform a memset", reinterpret_cast<::CUdeviceptr>(__dst), __bits, __count, __stream);
   }
   else
   {

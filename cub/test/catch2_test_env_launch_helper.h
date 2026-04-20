@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <cub/util_device.cuh>
+
 #include <thrust/system/cuda/detail/core/triple_chevron_launch.h>
 
 #include <cuda/std/optional>
@@ -137,6 +139,15 @@ struct stream_registry_factory_t
     return cudaOccupancyMaxActiveBlocksPerMultiprocessor(&sm_occupancy, kernel_ptr, block_size, dynamic_smem_bytes);
   }
 
+  _CCCL_HIDE_FROM_ABI CUB_RUNTIME_FUNCTION ::cudaError_t
+  MemcpyAsync(void* dst, const void* src, size_t num_bytes, ::cudaMemcpyKind kind, ::cudaStream_t stream) const
+  {
+    NV_IF_TARGET(NV_IS_HOST, (if (get_stream_registry_factory_state()->m_stream) {
+                   REQUIRE(stream == get_stream_registry_factory_state()->m_stream);
+                 }));
+    return ::cudaMemcpyAsync(dst, src, num_bytes, kind, stream);
+  }
+
   CUB_RUNTIME_FUNCTION cudaError_t MaxGridDimX(int& max_grid_dim_x) const
   {
     int device_ordinal;
@@ -148,6 +159,51 @@ struct stream_registry_factory_t
 
     // Get max grid dimension
     return cudaDeviceGetAttribute(&max_grid_dim_x, cudaDevAttrMaxGridDimX, device_ordinal);
+  }
+
+  CUB_RUNTIME_FUNCTION cudaError_t MemsetAsync(void* dst, unsigned char value, size_t num_bytes, cudaStream_t stream)
+  {
+    return cudaMemsetAsync(dst, value, num_bytes, stream);
+  }
+
+  CUB_RUNTIME_FUNCTION cudaError_t
+  MemcpyAsync(void* dst, const void* src, size_t num_bytes, cudaMemcpyKind kind, cudaStream_t stream)
+  {
+    return cudaMemcpyAsync(dst, src, num_bytes, kind, stream);
+  }
+
+  CUB_RUNTIME_FUNCTION cudaError_t MaxSharedMemory(int& max_shared_memory) const
+  {
+    int device = 0;
+    auto error = cudaGetDevice(&device);
+    if (error != cudaSuccess)
+    {
+      return error;
+    }
+
+    return cudaDeviceGetAttribute(&max_shared_memory, cudaDevAttrMaxSharedMemoryPerBlock, device);
+  }
+
+  template <typename Kernel>
+  CUB_RUNTIME_FUNCTION cudaError_t max_dynamic_smem_size_for(int& max_dynamic_smem_size, Kernel kernel_ptr)
+  {
+    NV_IF_ELSE_TARGET(NV_IS_HOST, //
+                      ({ return cub::MaxPotentialDynamicSmemBytes(max_dynamic_smem_size, kernel_ptr); }),
+                      ({
+                        cudaFuncAttributes func_attrs{};
+                        if (const auto error = cudaFuncGetAttributes(&func_attrs, kernel_ptr))
+                        {
+                          return error;
+                        }
+                        max_dynamic_smem_size = func_attrs.maxDynamicSharedSizeBytes;
+                        return cudaSuccess;
+                      }))
+  }
+
+  template <typename Kernel>
+  CUB_RUNTIME_FUNCTION cudaError_t set_max_dynamic_smem_size_for(Kernel kernel_ptr, int smem_size)
+  {
+    return cudaFuncSetAttribute(kernel_ptr, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size);
   }
 };
 
@@ -179,7 +235,7 @@ struct kernel_scope
 
 struct device_memory_resource : cub::detail::device_memory_resource
 {
-  cudaStream_t target_stream = 0;
+  cudaStream_t target_stream = nullptr;
   size_t* bytes_allocated    = nullptr;
   size_t* bytes_deallocated  = nullptr;
 
@@ -395,7 +451,7 @@ void launch(ActionT action, Args... args)
   env_t env = cuda::std::get<env_idx>(tuple);
 
   // Environment-based API should use default stream if not specified in the environment
-  cudaStream_t stream{0};
+  cudaStream_t stream{nullptr};
 
   if constexpr (cuda::std::execution::__queryable_with<env_t, cuda::get_stream_t>)
   {
@@ -409,7 +465,7 @@ void launch(ActionT action, Args... args)
   }
 
   // cuda graphs do not support default stream
-  REQUIRE(stream != cudaStream_t{0});
+  REQUIRE(stream != cudaStream_t{nullptr});
 
   size_t bytes_allocated{};
   size_t bytes_deallocated{};
@@ -456,8 +512,11 @@ void launch(ActionT action, Args... args)
     REQUIRE(cudaSuccess == cudaStreamDestroy(stream));
   }
 
-  size_t expected_bytes_allocated = fixed_env.query(get_expected_allocation_size_t{});
-  REQUIRE(expected_bytes_allocated == bytes_allocated);
+  if constexpr (cuda::std::execution::__queryable_with<env_t, get_expected_allocation_size_t>)
+  {
+    const size_t expected_bytes_allocated = fixed_env.query(get_expected_allocation_size_t{});
+    REQUIRE(expected_bytes_allocated == bytes_allocated);
+  }
 }
 
 #elif TEST_LAUNCH == 1
@@ -465,7 +524,21 @@ void launch(ActionT action, Args... args)
 template <class ActionT, class... Args>
 __global__ void device_side_api_launch_kernel(cudaError_t* d_error, ActionT action, Args... args)
 {
+  // The clang-tidy job uses clang-20 but clang does not support CUDA dynamic parallelism until
+  // clang-22. Since we are inside clang-tidy we don't actually care whether the kernel is
+  // invoked so do what we must to silence any compiler errors (though if we ever do use
+  // clang-22+ then invoke the kernel anyways to have clang-tidy check it).
+#  ifdef _CCCL_CLANG_TIDY_INVOKED
+#    if _CCCL_HAS_CDP()
   *d_error = action(args...);
+#    else // ^^^  _CCCL_HAS_CDP() ^^^ / vvv ! _CCCL_HAS_CDP() vvv
+  static_cast<void>(action);
+  (static_cast<void>(args), ...);
+  *d_error = cudaSuccess;
+#    endif // ! _CCCL_HAS_CDP()
+#  else // ^^^ _CCCL_CLANG_TIDY_INVOKED ^^^ / vvv !_CCCL_CLANG_TIDY_INVOKED vvv
+  *d_error = action(args...);
+#  endif // !_CCCL_CLANG_TIDY_INVOKED
 }
 
 template <class ActionT, class... Args>
@@ -480,7 +553,11 @@ void launch(ActionT action, Args... args)
   tpl_t tuple(args...);
   env_t env = cuda::std::get<env_idx>(tuple);
 
-  size_t expected_bytes_allocated = env.query(get_expected_allocation_size_t{});
+  static_assert(cuda::std::execution::__queryable_with<env_t, get_expected_allocation_size_t>,
+                "Unit tests using env launch wrappers (declared with DECLARE_LAUNCH_WRAPPER) must pass "
+                "expected_allocation_size as property in their env");
+
+  const size_t expected_bytes_allocated = env.query(get_expected_allocation_size_t{});
 
   c2h::device_vector<cudaError_t> d_error(1, cudaErrorInvalidValue);
   c2h::device_vector<std::size_t> d_temp_storage(expected_bytes_allocated);
@@ -529,7 +606,7 @@ void launch(ActionT action, Args... args)
   env_t env = cuda::std::get<env_idx>(tuple);
 
   // Environment-based API should use default stream if not specified in the environment
-  cudaStream_t stream{0};
+  cudaStream_t stream{nullptr};
 
   if constexpr (cuda::std::execution::__queryable_with<env_t, cuda::get_stream_t>)
   {
@@ -589,8 +666,11 @@ void launch(ActionT action, Args... args)
     REQUIRE(cudaSuccess == cudaStreamDestroy(stream));
   }
 
-  size_t expected_bytes_allocated = fixed_env.query(get_expected_allocation_size_t{});
-  REQUIRE(expected_bytes_allocated == bytes_allocated);
+  if constexpr (cuda::std::execution::__queryable_with<env_t, get_expected_allocation_size_t>)
+  {
+    const size_t expected_bytes_allocated = fixed_env.query(get_expected_allocation_size_t{});
+    REQUIRE(expected_bytes_allocated == bytes_allocated);
+  }
 }
 
 #endif // TEST_LAUNCH == 0

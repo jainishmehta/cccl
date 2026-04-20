@@ -25,13 +25,10 @@
 #include <thrust/detail/raw_pointer_cast.h>
 #include <thrust/iterator/iterator_facade.h>
 
+#include <cuda/std/__host_stdlib/ostream>
 #include <cuda/std/__iterator/iterator_traits.h>
 #include <cuda/std/__type_traits/remove_cv.h>
 #include <cuda/std/__utility/declval.h>
-
-#if !_CCCL_COMPILER(NVRTC)
-#  include <ostream>
-#endif // !_CCCL_COMPILER(NVRTC)
 
 CUB_NAMESPACE_BEGIN
 
@@ -92,6 +89,8 @@ public:
 
   /// My own type
   using self_type = CacheModifiedInputIterator;
+
+  static constexpr CacheLoadModifier __modifier = MODIFIER;
 
   /// Type to express the result of subtracting one iterator from another
   using difference_type = OffsetT;
@@ -218,6 +217,12 @@ public:
 
 namespace detail
 {
+template <typename Iterator>
+inline constexpr bool is_CacheModifiedInputIterator = false;
+
+template <CacheLoadModifier MODIFIER, typename ValueType, typename OffsetT>
+inline constexpr bool is_CacheModifiedInputIterator<CacheModifiedInputIterator<MODIFIER, ValueType, OffsetT>> = true;
+
 template <CacheLoadModifier LoadModifier, typename Iterator>
 _CCCL_HOST_DEVICE _CCCL_FORCEINLINE auto try_make_cache_modified_iterator(Iterator it)
 {

@@ -82,12 +82,17 @@ class _SegmentedReduce:
         start_offsets_in,
         end_offsets_in,
         h_init,
+        max_segment_size: int | None = None,
         stream=None,
     ):
         if num_segments > np.iinfo(np.int32).max:
             raise RuntimeError(
                 "Segmented sort does not currently support more than 2^31-1 segments."
             )
+
+        if max_segment_size is None:
+            max_segment_size = 0  # CCCL.c treats 0 as "not specified"
+
         set_cccl_iterator_state(self.d_in_cccl, d_in)
         set_cccl_iterator_state(self.d_out_cccl, d_out)
         set_cccl_iterator_state(self.start_offsets_in_cccl, start_offsets_in)
@@ -117,6 +122,7 @@ class _SegmentedReduce:
             self.end_offsets_in_cccl,
             self.op_cccl,
             self.h_init_cccl,
+            max_segment_size,
             stream_handle,
         )
         return temp_storage_bytes
@@ -223,6 +229,7 @@ def segmented_reduce(
     op: Operator,
     h_init: np.ndarray | GpuStruct,
     num_segments: int,
+    max_segment_size: int | None = None,
     stream=None,
 ):
     """
@@ -248,6 +255,9 @@ def segmented_reduce(
             the data type of the initial value ``h_init``.
         h_init: Initial value for the reduction
         num_segments: Number of segments to reduce
+        max_segment_size: The number of elements in the largest segment (optional)
+            If provided, this information is used to dispatch to the
+            optimal kernel for best performance.
         stream: CUDA stream for the operation (optional)
     """
     reducer = make_segmented_reduce(
@@ -262,6 +272,7 @@ def segmented_reduce(
         start_offsets_in,
         end_offsets_in,
         h_init,
+        max_segment_size,
         stream,
     )
     tmp_storage = TempStorageBuffer(tmp_storage_bytes, stream)
@@ -274,5 +285,6 @@ def segmented_reduce(
         start_offsets_in,
         end_offsets_in,
         h_init,
+        max_segment_size,
         stream,
     )
