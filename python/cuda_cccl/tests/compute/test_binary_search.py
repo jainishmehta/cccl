@@ -48,11 +48,23 @@ def test_lower_bound_basic(dtype, num_items, num_values):
     h_values = random_sorted_array(num_values, dtype)
 
     d_data = cp.asarray(h_data)
-    d_values = cp.asarray(h_values)
     d_out = cp.empty(num_values, dtype=np.uintp)
 
-    cuda.compute.lower_bound(d_data, d_values, d_out, num_items, num_values)
+    d_values = cp.empty(num_values, dtype=h_data.dtype)
+    lower = cuda.compute.make_lower_bound(d_data, d_values, d_out)
 
+    if num_values > 0:
+        prefix = num_values // 2
+        d_values[:prefix] = cp.asarray(h_values[:prefix])
+        lower(d_data, d_values, d_out, None, num_items, prefix)
+        expected = np.searchsorted(h_data, h_values[:prefix], side="left").astype(
+            np.uintp
+        )
+        got = cp.asnumpy(d_out[:prefix])
+        assert np.array_equal(got, expected)
+
+    d_values[...] = cp.asarray(h_values)
+    lower(d_data, d_values, d_out, None, num_items, num_values)
     expected = np.searchsorted(h_data, h_values, side="left").astype(np.uintp)
     got = cp.asnumpy(d_out)
     assert np.array_equal(got, expected)
@@ -67,11 +79,23 @@ def test_upper_bound_basic(dtype, num_items, num_values):
     h_values = random_sorted_array(num_values, dtype)
 
     d_data = cp.asarray(h_data)
-    d_values = cp.asarray(h_values)
     d_out = cp.empty(num_values, dtype=np.uintp)
 
-    cuda.compute.upper_bound(d_data, d_values, d_out, num_items, num_values)
+    d_values = cp.empty(num_values, dtype=h_data.dtype)
+    upper = cuda.compute.make_upper_bound(d_data, d_values, d_out)
 
+    if num_values > 0:
+        prefix = num_values // 2
+        d_values[:prefix] = cp.asarray(h_values[:prefix])
+        upper(d_data, d_values, d_out, None, num_items, prefix)
+        expected = np.searchsorted(h_data, h_values[:prefix], side="right").astype(
+            np.uintp
+        )
+        got = cp.asnumpy(d_out[:prefix])
+        assert np.array_equal(got, expected)
+
+    d_values[...] = cp.asarray(h_values)
+    upper(d_data, d_values, d_out, None, num_items, num_values)
     expected = np.searchsorted(h_data, h_values, side="right").astype(np.uintp)
     got = cp.asnumpy(d_out)
     assert np.array_equal(got, expected)
@@ -86,25 +110,40 @@ def test_binary_search_with_duplicates(dtype):
         else rng.random(1024, dtype=dtype)
     )
     h_data.sort()
-    h_values = (
+    h_values_a = (
+        rng.integers(10, size=128, dtype=dtype)
+        if np.isdtype(dtype, "integral")
+        else rng.random(128, dtype=dtype)
+    )
+    h_values_b = (
         rng.integers(10, size=128, dtype=dtype)
         if np.isdtype(dtype, "integral")
         else rng.random(128, dtype=dtype)
     )
 
     d_data = cp.asarray(h_data)
-    d_values = cp.asarray(h_values)
-    d_out = cp.empty(len(h_values), dtype=np.uintp)
+    d_values = cp.empty(128, dtype=h_data.dtype)
+    d_out = cp.empty(128, dtype=np.uintp)
 
-    cuda.compute.lower_bound(d_data, d_values, d_out, len(h_data), len(h_values))
-    expected = np.searchsorted(h_data, h_values, side="left").astype(np.uintp)
-    got = cp.asnumpy(d_out)
-    assert np.array_equal(got, expected)
+    lower = cuda.compute.make_lower_bound(d_data, d_values, d_out)
+    upper = cuda.compute.make_upper_bound(d_data, d_values, d_out)
+    stream = cp.cuda.Stream(non_blocking=True)
 
-    cuda.compute.upper_bound(d_data, d_values, d_out, len(h_data), len(h_values))
-    expected = np.searchsorted(h_data, h_values, side="right").astype(np.uintp)
-    got = cp.asnumpy(d_out)
-    assert np.array_equal(got, expected)
+    for h_values in (h_values_a, h_values_b):
+        with stream:
+            d_values.set(h_values)
+            lower(d_data, d_values, d_out, None, len(h_data), len(h_values), stream)
+        stream.synchronize()
+        expected = np.searchsorted(h_data, h_values, side="left").astype(np.uintp)
+        got = cp.asnumpy(d_out)
+        assert np.array_equal(got, expected)
+
+        with stream:
+            upper(d_data, d_values, d_out, None, len(h_data), len(h_values), stream)
+        stream.synchronize()
+        expected = np.searchsorted(h_data, h_values, side="right").astype(np.uintp)
+        got = cp.asnumpy(d_out)
+        assert np.array_equal(got, expected)
 
 
 def test_binary_search_requires_unsigned_output():
@@ -114,7 +153,7 @@ def test_binary_search_requires_unsigned_output():
     d_out = cp.empty(len(d_values), dtype=np.int32)  # signed, should fail
 
     with pytest.raises(TypeError, match="unsigned integer"):
-        cuda.compute.lower_bound(d_data, d_values, d_out, len(d_data), len(d_values))
+        cuda.compute.make_lower_bound(d_data, d_values, d_out)
 
 
 def test_binary_search_requires_pointer_sized_output():
@@ -126,4 +165,4 @@ def test_binary_search_requires_pointer_sized_output():
     )  # unsigned but not pointer-sized (on 64-bit)
 
     with pytest.raises(ValueError, match="pointer-sized"):
-        cuda.compute.lower_bound(d_data, d_values, d_out, len(d_data), len(d_values))
+        cuda.compute.make_lower_bound(d_data, d_values, d_out)

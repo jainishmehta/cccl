@@ -21,6 +21,7 @@ from ..typing import DeviceArrayLike, IteratorT
 class _Histogram:
     __slots__ = [
         "num_rows",
+        "_level_dtype",
         "d_samples_cccl",
         "d_histogram_cccl",
         "h_num_output_levels_cccl",
@@ -44,6 +45,8 @@ class _Histogram:
         self.num_rows = 1
         num_levels = h_num_output_levels[0]
         row_stride_samples = num_samples
+
+        self._level_dtype = h_lower_level.dtype
 
         self.d_samples_cccl = cccl.to_cccl_input_iter(d_samples)
         self.d_histogram_cccl = cccl.to_cccl_output_iter(d_histogram)
@@ -75,6 +78,10 @@ class _Histogram:
         num_samples: int,
         stream=None,
     ):
+        h_num_output_levels = np.atleast_1d(np.asarray(h_num_output_levels, dtype=np.int32))
+        h_lower_level = np.atleast_1d(np.asarray(h_lower_level, dtype=self._level_dtype))
+        h_upper_level = np.atleast_1d(np.asarray(h_upper_level, dtype=self._level_dtype))
+
         set_cccl_iterator_state(self.d_samples_cccl, d_samples)
         set_cccl_iterator_state(self.d_histogram_cccl, d_histogram)
         self.h_num_output_levels_cccl.state = to_cccl_value_state(h_num_output_levels)
@@ -167,6 +174,12 @@ def make_histogram_even(
     Returns:
         A callable object that can be used to perform the histogram
     """
+    # Normalize scalar inputs (int, np.generic) to 1-D arrays so downstream
+    # code can uniformly index with [0] and access .dtype.
+    h_num_output_levels = np.atleast_1d(np.asarray(h_num_output_levels))
+    h_lower_level = np.atleast_1d(np.asarray(h_lower_level))
+    h_upper_level = np.atleast_1d(np.asarray(h_upper_level))
+
     # Extract scalar values from arrays for caching
     num_output_levels_val = int(h_num_output_levels[0])
     lower_level_val = h_lower_level[0].item()
