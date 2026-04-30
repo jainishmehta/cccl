@@ -451,3 +451,76 @@ python/cuda_cccl/
 ---
 
 ⚠️ **Reminder:** Long-running builds/tests are normal. Never cancel them; allow to complete.
+
+---
+
+## Cursor Cloud specific instructions
+
+### Environment prerequisites
+
+The Cloud VM comes with Ubuntu 24.04 but does **not** include the NVIDIA CUDA Toolkit or Ninja by default. The update script installs `ninja-build`, `pre-commit`, and `lit`. The CUDA Toolkit (`cuda-toolkit-12-6`) must be installed once via the NVIDIA apt repository (see snapshot or manual steps below) because it is too large for the update script.
+
+After the CUDA Toolkit is installed, ensure PATH includes `/usr/local/cuda/bin`:
+
+```bash
+export PATH=/usr/local/cuda/bin:${PATH}
+export LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}
+```
+
+These exports should be in `~/.bashrc` so they persist across sessions.
+
+### Compiler setup
+
+The default `/usr/bin/c++` may point to `clang++` on the VM. CCCL builds expect the CXX compiler and CUDA host compiler to match. Set them to `g++`:
+
+```bash
+update-alternatives --set c++ /usr/bin/g++
+export CUDAHOSTCXX=/usr/bin/g++
+export CXX=/usr/bin/g++
+```
+
+When invoking builds, also pass `-DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++` via `--cmake-options`.
+
+### No GPU available
+
+Cloud VMs do not have NVIDIA GPUs. This means:
+
+- **CTest targets** (`--ctest-targets`) will fail at runtime (no CUDA device).
+- **Lit tests** can be **precompiled** (`--lit-precompile-tests`) but not **executed** (`--lit-tests`) unless `NoopExecutor` is used.
+- Use virtual architectures (e.g. `-DCMAKE_CUDA_ARCHITECTURES=80-virtual`) for compilation-only verification.
+
+### Build infix
+
+Set `CCCL_BUILD_INFIX` before building so that build trees land in the expected directory structure:
+
+```bash
+export CCCL_BUILD_INFIX="cuda12.6-gcc13"
+```
+
+### Quick verification commands
+
+```bash
+# Lint check
+pre-commit run --files <file1> <file2>
+
+# Configure + build a CUB test (no GPU needed)
+ci/util/build_and_test_targets.sh \
+  --preset cub-cpp20 \
+  --cmake-options "-DCMAKE_CUDA_ARCHITECTURES=80-virtual -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++" \
+  --build-targets "cub.test.block.reduce.dimx_7.dimyz_1"
+
+# Configure + precompile a libcudacxx lit test (no GPU needed)
+ci/util/build_and_test_targets.sh \
+  --preset libcudacxx \
+  --cmake-options "-DCMAKE_CUDA_ARCHITECTURES=80-virtual -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++" \
+  --lit-precompile-tests "std/algorithms/alg.nonmodifying/alg.any_of/any_of.pass.cpp"
+```
+
+### pre-commit hooks
+
+If `git config core.hooksPath` is set (common in CI-configured repos), unset it first:
+
+```bash
+git config --unset-all core.hooksPath
+pre-commit install
+```
